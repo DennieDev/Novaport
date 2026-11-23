@@ -149,6 +149,10 @@ export interface Repository {
 	webhook_secret: string;
 	poll_interval: number;
 	default_deploy_mode: DeployMode;
+	default_edit_mode: 'commit' | 'pr';
+	forge: 'none' | 'github' | 'gitlab' | 'gitea';
+	forge_api_url: string | null;
+	has_forge_token: boolean;
 	created_at: string;
 	last_synced_at: string | null;
 	last_commit: string | null;
@@ -199,6 +203,7 @@ export interface Stack {
 	repository: { id: string; name: string };
 	type: 'swarm' | 'compose';
 	deploy_mode: DeployMode;
+	edit_mode: 'commit' | 'pr';
 	config_error: string | null;
 	removed_at: string | null;
 	latest_revision: Revision | null;
@@ -251,4 +256,50 @@ export interface VolumeFiles {
 	path: string;
 	entries: { name: string; kind: string; size: number; modified: number }[];
 	truncated: boolean;
+}
+
+export interface StackFile {
+	path: string;
+	content: string | null;
+	binary: boolean;
+	size: number;
+}
+
+export interface StackFiles {
+	commit: string;
+	files: StackFile[];
+	has_secrets: boolean;
+}
+
+export interface FileConflict {
+	path: string;
+	base: string | null;
+	theirs: string | null;
+	yours: string | null;
+}
+
+export interface ConflictBody {
+	detail: string;
+	tip: string;
+	conflicts: FileConflict[];
+}
+
+export interface SaveResult {
+	commit: string;
+	branch: string;
+	pull_request_url: string | null;
+	new_revisions: number;
+	queued_deployments: number;
+}
+
+export interface SecretsData {
+	commit: string;
+	keys: string[];
+	values: Record<string, string> | null;
+}
+
+export interface SopsInfo {
+	available: boolean;
+	recipient: string | null;
+	example: string | null;
 }

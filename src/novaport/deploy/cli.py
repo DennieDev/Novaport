@@ -20,8 +20,16 @@ class DockerCli(Protocol):
         ...
 
     async def apply(
-        self, stack_type: StackType, name: str, folder: Path, compose_file: str, wait_seconds: int
+        self,
+        stack_type: StackType,
+        name: str,
+        folder: Path,
+        compose_file: str,
+        wait_seconds: int,
+        env: Mapping[str, str],
     ) -> Result: ...
+
+    async def remove_secrets(self, names: list[str]) -> Result: ...
 
 
 class SubprocessDockerCli:
@@ -46,7 +54,13 @@ class SubprocessDockerCli:
         )
 
     async def apply(
-        self, stack_type: StackType, name: str, folder: Path, compose_file: str, wait_seconds: int
+        self,
+        stack_type: StackType,
+        name: str,
+        folder: Path,
+        compose_file: str,
+        wait_seconds: int,
+        env: Mapping[str, str],
     ) -> Result:
         if stack_type == StackType.SWARM:
             args = [
@@ -77,4 +91,9 @@ class SubprocessDockerCli:
                 str(wait_seconds),
             ]
             timeout = self.timeout + wait_seconds
-        return await run(args, cwd=folder, env=self.env, timeout=timeout, check=False)
+        return await run(args, cwd=folder, env={**env, **self.env}, timeout=timeout, check=False)
+
+    async def remove_secrets(self, names: list[str]) -> Result:
+        return await run(
+            ["docker", "secret", "rm", *names], env=self.env, timeout=self.timeout, check=False
+        )

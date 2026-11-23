@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import asyncio
+import shutil
 import uuid
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
@@ -15,7 +16,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
 
 from novaport.crypto import Cipher
+from novaport.deploy.compose import secret_name
 from novaport.deploy.pipeline import Pipeline
+from novaport.docker.views import STACK_LABEL
 from novaport.jobs import Jobs
 from novaport.models import (
     Deployment,
@@ -27,8 +30,9 @@ from novaport.models import (
     StackType,
 )
 from novaport.process import Result
-from novaport.stacks.sync import Syncer, mirror_for
-from tests.conftest import TEST_SECRET_KEY, make_settings
+from novaport.sops import Sops, generate_age_key
+from novaport.stacks.sync import Syncer, mirror_for, mirror_path
+from tests.conftest import SOPS_BINARY, TEST_SECRET_KEY, make_settings
 from tests.fakes import FakeAgents, FakeReader
 from tests.gitrepo import COMPOSE, Repo
 
@@ -46,6 +50,9 @@ class FakeCli:
     calls: list[str] = field(default_factory=list)
     env_seen: dict[str, str] = field(default_factory=dict)
     rendered: dict[str, Any] = field(default_factory=dict)
+    apply_env: dict[str, str] = field(default_factory=dict)
+    secret_files: dict[str, str] = field(default_factory=dict)
+    removed_secrets: list[str] = field(default_factory=list)
 
     async def config(
         self,
@@ -62,11 +69,26 @@ class FakeCli:
         return _ok((folder / compose_file).read_text())
 
     async def apply(
-        self, stack_type: StackType, name: str, folder: Path, compose_file: str, wait_seconds: int
+        self,
+        stack_type: StackType,
+        name: str,
+        folder: Path,
+        compose_file: str,
+        wait_seconds: int,
+        env: Mapping[str, str],
     ) -> Result:
         self.calls.append(f"apply {stack_type} {name} {compose_file}")
         self.rendered = yaml.safe_load((folder / compose_file).read_text())
+        self.apply_env = dict(env)
+        secrets_dir = folder / ".novaport-secrets"
+        if secrets_dir.is_dir():
+            self.secret_files = {f.name: f.read_text() for f in secrets_dir.iterdir()}
         return self.apply_result
+
+    async def remove_secrets(self, names: list[str]) -> Result:
+        self.calls.append(f"remove-secrets {' '.join(sorted(names))}")
+        self.removed_secrets = list(names)
+        return _ok()
 
 
 def converged_service(stack: str) -> dict[str, Any]:
@@ -278,3 +300,65 @@ async def test_missing_bind_mount_stops_before_apply(env: Env) -> None:
     d = await env.deployment(deployment_id)
     assert d.stage == "preflight"
     assert d.error == "web_web: bind mount source /srv/missing does not exist on mgr-1."
+
+
+SECRET_COMPOSE = """services:
+  web:
+    image: nginx:alpine
+    secrets: [db_password]
+secrets:
+  db_password:
+    environment: DB_PASSWORD
+"""
+
+
+@pytest.mark.sops
+async def test_sops_secrets_become_hashed_swarm_secrets(env: Env) -> None:
+    sops = Sops(SOPS_BINARY or "sops", generate_age_key())
+    encrypted = await sops.encrypt({"DB_PASSWORD": "hunter2"}, [str(sops.recipient)])
+    env.origin.write("stacks/web/compose.yaml", SECRET_COMPOSE)
+    env.origin.write("stacks/web/secrets.env", encrypted.decode())
+    env.origin.commit("Use a secret")
+    env.pipeline.sops = lambda: sops
+    env.reader.secret_list = [
+        {"Spec": {"Name": "web_db_password_0badc0de", "Labels": {STACK_LABEL: "web"}}},
+        {"Spec": {"Name": "other_db_password_0badc0de", "Labels": {STACK_LABEL: "other"}}},
+    ]
+    deployment_id = await env.setup()
+
+    assert await env.pipeline.run(deployment_id) == DeploymentStatus.SUCCEEDED
+    secret = env.cli.rendered["secrets"]["db_password"]
+    assert secret["name"] == secret_name("web", "db_password", "hunter2")
+    assert secret["file"] == "./.novaport-secrets/DB_PASSWORD"
+    assert env.cli.secret_files == {"DB_PASSWORD": "hunter2"}
+    assert env.cli.calls[0] == "config swarm web .novaport-source.yaml"
+    assert env.cli.removed_secrets == ["web_db_password_0badc0de"]
+
+
+async def test_secrets_without_age_key_fail_clearly(env: Env) -> None:
+    env.origin.write("stacks/web/secrets.env", "DB_PASSWORD=ENC[AES256_GCM,data:x]\n")
+    env.origin.commit("Secret")
+    deployment_id = await env.setup()
+    assert await env.pipeline.run(deployment_id) == DeploymentStatus.FAILED
+    d = await env.deployment(deployment_id)
+    assert d.error == "secrets.env is present, but NOVAPORT_AGE_KEY is not set."
+
+
+async def test_missing_secret_variable(env: Env) -> None:
+    env.origin.write("stacks/web/compose.yaml", SECRET_COMPOSE)
+    env.origin.commit("Secret without value")
+    deployment_id = await env.setup()
+    assert await env.pipeline.run(deployment_id) == DeploymentStatus.FAILED
+    d = await env.deployment(deployment_id)
+    assert d.error == "Secret 'db_password' reads DB_PASSWORD, which is not in secrets.env or .env."
+
+
+async def test_missing_mirror_is_fetched_again(env: Env) -> None:
+    deployment_id = await env.setup()
+    async with env.maker() as db:
+        stack = await db.scalar(select(Stack).options(selectinload(Stack.repository)))
+        assert stack is not None
+    # A fresh data directory, as after a restart without a persistent volume.
+    shutil.rmtree(mirror_path(env.settings, stack.repository_id))
+    env.pipeline.ensure_commit = lambda s, commit: env.syncer.ensure_commit(s.repository, commit)
+    assert await env.pipeline.run(deployment_id) == DeploymentStatus.SUCCEEDED

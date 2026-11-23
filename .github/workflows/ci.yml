@@ -36,6 +36,15 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+      - name: Install sops
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -sSfL -o "$RUNNER_TEMP/bin/sops" \
+            https://github.com/getsops/sops/releases/download/v3.13.3/sops-v3.13.3.linux.amd64
+          echo "e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b  $RUNNER_TEMP/bin/sops" \
+            | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/bin/sops"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - run: uv sync --locked
       - run: uv run ruff check
       - run: uv run ruff format --check

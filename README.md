@@ -20,6 +20,25 @@ server (shared token, encrypted overlay network) and gives Novaport what a manag
 its own: container logs and terminals on every node, bind mount checks before a deploy, and
 per-node disk, image, and volume details.
 
+## Secrets
+
+Novaport reads SOPS-encrypted `secrets.env` files with an age key. Generate one with
+`novaport generate-age-key`, give it to Novaport as `NOVAPORT_AGE_KEY` (or the
+`novaport_age_key` Swarm secret), and list its public key in the repository's `.sops.yaml` next
+to your own:
+
+```yaml
+creation_rules:
+  - path_regex: secrets\.env$
+    age: >-
+      age1novaport...,
+      age1yourownkey...
+```
+
+Reference a value from a compose file with `secrets: name: environment: KEY`. Novaport turns it
+into a Swarm secret whose name includes a hash of the value, so rotating a secret is a normal
+rolling update.
+
 ## Development
 
 Requirements: [uv](https://docs.astral.sh/uv/), Docker, and Node.js 22+ for the frontend.

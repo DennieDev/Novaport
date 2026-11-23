@@ -24,6 +24,20 @@ class Credentials:
 
 
 @dataclass(frozen=True)
+class Identity:
+    name: str
+    email: str
+
+
+@dataclass(frozen=True)
+class FileEntry:
+    path: str  # relative to the folder that was listed
+    mode: str
+    blob: str
+    size: int
+
+
+@dataclass(frozen=True)
 class CommitInfo:
     sha: str
     author: str
@@ -35,6 +49,10 @@ class GitError(Exception):
     pass
 
 
+class PushRejected(GitError):
+    """The remote branch moved since we fetched it."""
+
+
 class GitMirror:
     """A bare clone used as a local cache; files are read from it by commit, never checked out."""
 
@@ -44,10 +62,16 @@ class GitMirror:
         self.known_hosts = known_hosts
         self.timeout = timeout
 
-    async def _git(self, *args: str, env: dict[str, str] | None = None) -> str:
+    async def _git(
+        self, *args: str, env: dict[str, str] | None = None, stdin: bytes | None = None
+    ) -> str:
         try:
             result = await run(
-                ["git", *args], cwd=self.path, env=GIT_ENV | (env or {}), timeout=self.timeout
+                ["git", *args],
+                cwd=self.path,
+                env=GIT_ENV | (env or {}),
+                stdin=stdin,
+                timeout=self.timeout,
             )
         except (CommandFailed, CommandTimeout) as exc:
             raise GitError(str(exc)) from exc
@@ -124,6 +148,15 @@ class GitMirror:
                 names.append(f"{root}/{name}" if root else name)
         return sorted(names)
 
+    async def has_commit(self, commit: str) -> bool:
+        if not (self.path / "HEAD").exists():
+            return False
+        try:
+            await self._git("cat-file", "-e", f"{commit}^{{commit}}")
+        except GitError:
+            return False
+        return True
+
     async def list_files(self, commit: str, path: str) -> list[str]:
         """File names directly inside `path` at `commit`."""
         try:
@@ -161,3 +194,81 @@ class GitMirror:
         with tarfile.open(fileobj=io.BytesIO(data)) as tar:
             tar.extractall(dest, filter="data")
         return dest / path
+
+    async def tree_files(self, commit: str, path: str) -> list[FileEntry]:
+        """All files under `path` at `commit`, recursively."""
+        try:
+            out = await self._git("ls-tree", "-r", "-z", "--long", f"{commit}:{path}")
+        except GitError:
+            return []
+        entries = []
+        for line in filter(None, out.split("\0")):
+            meta, name = line.split("\t", 1)
+            mode, kind, blob, size = meta.split()
+            if kind == "blob":
+                entries.append(FileEntry(name, mode, blob, int(size) if size != "-" else 0))
+        return entries
+
+    async def blob(self, blob: str) -> bytes:
+        try:
+            return await run_binary(
+                ["git", "cat-file", "blob", blob], cwd=self.path, env=GIT_ENV, timeout=self.timeout
+            )
+        except (CommandFailed, CommandTimeout) as exc:
+            raise GitError(str(exc)) from exc
+
+    async def commit(
+        self,
+        parent: str,
+        changes: dict[str, bytes | None],
+        message: str,
+        author: Identity,
+        committer: Identity,
+    ) -> str:
+        """Create a commit on top of `parent` with `changes` (repository path to content, or
+        None to delete) without a working tree. Returns the new commit SHA."""
+        with tempfile.TemporaryDirectory(prefix="novaport-index-") as tmp:
+            env = {"GIT_INDEX_FILE": str(Path(tmp) / "index")}
+            await self._git("read-tree", parent, env=env)
+            lines = []
+            for path, content in sorted(changes.items()):
+                if content is None:
+                    # Mode 0 removes the path from the index.
+                    lines.append(f"0 {'0' * 40}\t{path}")
+                else:
+                    blob = (await self._git("hash-object", "-w", "--stdin", stdin=content)).strip()
+                    lines.append(f"100644 {blob}\t{path}")
+            await self._git(
+                "update-index", "--index-info", env=env, stdin=("\n".join(lines) + "\n").encode()
+            )
+            tree = (await self._git("write-tree", env=env)).strip()
+        identity = {
+            "GIT_AUTHOR_NAME": author.name,
+            "GIT_AUTHOR_EMAIL": author.email,
+            "GIT_COMMITTER_NAME": committer.name,
+            "GIT_COMMITTER_EMAIL": committer.email,
+        }
+        out = await self._git(
+            "commit-tree", tree, "-p", parent, env=identity, stdin=message.encode()
+        )
+        return out.strip()
+
+    async def push(self, commit: str, branch: str, credentials: Credentials) -> None:
+        async with self._auth_env(credentials) as env:
+            try:
+                await self._git(
+                    "push", "--quiet", "origin", f"{commit}:refs/heads/{branch}", env=env
+                )
+            except GitError as exc:
+                text = str(exc)
+                if any(s in text for s in ("non-fast-forward", "fetch first", "[rejected]")):
+                    raise PushRejected(text) from exc
+                raise
+        # Keep the local tracking ref in step so the next read sees our commit.
+        await self._git("update-ref", f"refs/remotes/origin/{branch}", commit)
+
+    async def changed_between(self, old: str, new: str, path: str) -> bool:
+        try:
+            return await self.tree_hash(old, path) != await self.tree_hash(new, path)
+        except GitError:
+            return True

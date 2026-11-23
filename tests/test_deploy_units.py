@@ -65,6 +65,15 @@ def test_add_labels_compose_uses_container_labels() -> None:
     assert result["services"]["web"]["labels"] == {"a": "1", "novaport.stack": "shop"}
 
 
+def test_swarm_rendering_keeps_literal_dollars() -> None:
+    normalized = "services:\n  web:\n    command: [sh, -c, 'echo $(date) $HOME']\n"
+    swarm = yaml.safe_load(add_labels(normalized, StackType.SWARM, {"a": "1"}))
+    assert swarm["services"]["web"]["command"][2] == "echo $$(date) $$HOME"
+    # `docker compose config` keeps `$$` itself, so compose output is left alone.
+    compose = yaml.safe_load(add_labels(normalized, StackType.COMPOSE, {"a": "1"}))
+    assert compose["services"]["web"]["command"][2] == "echo $(date) $HOME"
+
+
 def test_add_labels_rejects_empty_file() -> None:
     with pytest.raises(ComposeError):
         add_labels("version: '3'\n", StackType.SWARM, {})

@@ -88,6 +88,14 @@
 			<dd>{r.poll_interval ? `every ${r.poll_interval}s` : 'off (webhook only)'}</dd>
 			<dt>Default deploy mode</dt>
 			<dd>{r.default_deploy_mode}</dd>
+			<dt>Edits</dt>
+			<dd>
+				{r.default_edit_mode === 'pr' ? 'pull requests' : 'commit to branch'}
+				{#if r.forge !== 'none'}
+					· {r.forge}{r.forge_api_url ? ` (${r.forge_api_url})` : ''}
+					· token {r.has_forge_token || r.has_token ? 'stored' : 'missing'}
+				{/if}
+			</dd>
 			<dt>Last sync</dt>
 			<dd>
 				{ago(r.last_synced_at)}

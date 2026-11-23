@@ -18,7 +18,11 @@
 		auth: 'none' as Repository['auth'],
 		token: '',
 		poll_interval: 300,
-		default_deploy_mode: 'manual' as DeployMode
+		default_deploy_mode: 'manual' as DeployMode,
+		default_edit_mode: 'commit' as Repository['default_edit_mode'],
+		forge: 'none' as Repository['forge'],
+		forge_api_url: '',
+		forge_token: ''
 	});
 	let error = $state<string | undefined>();
 	let busy = $state(false);
@@ -30,7 +34,9 @@
 		try {
 			const repo = await api.post<Repository>('/repositories', {
 				...form,
-				token: form.auth === 'token' ? form.token : null
+				token: form.auth === 'token' ? form.token : null,
+				forge_api_url: form.forge_api_url || null,
+				forge_token: form.forge_token || null
 			});
 			await goto(`/repositories/${repo.id}`);
 		} catch (e) {
@@ -43,8 +49,8 @@
 
 <h1>Repositories</h1>
 <p class="muted">
-	Each repository holds stacks, one folder per stack under the stacks folder. Novaport reads
-	them; it doesn't change anything in git yet.
+	Each repository holds stacks, one folder per stack under the stacks folder. Edits made in
+	Novaport are committed back, so the deploy key or token needs write access for that.
 </p>
 
 <Status loading={repos.loading && !repos.data} error={repos.error} />
@@ -106,6 +112,32 @@
 				<option value="auto">Deploy automatically</option>
 			</select>
 		</label>
+		<label>
+			Edits from Novaport
+			<select bind:value={form.default_edit_mode}>
+				<option value="commit">Commit to the branch</option>
+				<option value="pr">Open a pull request</option>
+			</select>
+		</label>
+		<label>
+			Forge (for pull requests)
+			<select bind:value={form.forge}>
+				<option value="none">None</option>
+				<option value="github">GitHub</option>
+				<option value="gitlab">GitLab</option>
+				<option value="gitea">Gitea / Forgejo</option>
+			</select>
+		</label>
+		{#if form.forge !== 'none'}
+			<label>
+				API URL (optional for github.com)
+				<input bind:value={form.forge_api_url} placeholder="https://git.example.com" />
+			</label>
+			<label>
+				Forge token {form.auth === 'token' ? '(empty = use the HTTPS token)' : ''}
+				<input type="password" bind:value={form.forge_token} />
+			</label>
+		{/if}
 		{#if error}<p class="error">{error}</p>{/if}
 		<div><button type="submit" disabled={busy}>Add</button></div>
 	</form>

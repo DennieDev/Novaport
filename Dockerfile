@@ -23,6 +23,16 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM docker:29-cli AS docker-cli
 
+FROM debian:trixie-slim AS sops
+ARG TARGETARCH=amd64
+ARG SOPS_VERSION=v3.13.3
+ARG SOPS_SHA256_amd64=e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b
+ARG SOPS_SHA256_arm64=53b0abacd38ef1b12a66d6c100956691b9cefce018d91f81e73ddf7438b94d77
+ADD https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.${TARGETARCH} /sops
+RUN eval "expected=\$SOPS_SHA256_${TARGETARCH}" \
+    && echo "${expected}  /sops" | sha256sum -c - \
+    && chmod 0755 /sops
+
 FROM python:3.14-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git openssh-client \
@@ -30,6 +40,7 @@ RUN apt-get update \
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose \
     /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY --from=sops /sops /usr/local/bin/sops
 COPY --from=python /app/.venv /app/.venv
 COPY --from=frontend /src/build /app/static
 RUN mkdir -p /var/lib/novaport

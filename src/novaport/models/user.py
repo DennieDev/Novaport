@@ -13,6 +13,7 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     username: Mapped[str] = mapped_column(String(150), unique=True)
+    email: Mapped[str | None] = mapped_column(String(320))
     password_hash: Mapped[str | None] = mapped_column(String(255))
     is_admin: Mapped[bool] = mapped_column(default=False)
     disabled: Mapped[bool] = mapped_column(default=False)

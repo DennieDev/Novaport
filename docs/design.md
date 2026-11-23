@@ -105,8 +105,9 @@ Postgres only. Besides normal storage it provides:
 
 ### Frontend
 
-SvelteKit with TypeScript, built to static files and served by the server. Monaco for the compose
-editor and diff views, xterm.js for terminals. Live data over a single WebSocket per browser tab.
+SvelteKit with TypeScript, built to static files and served by the server. CodeMirror 6 for the
+compose editor and diff views (much lighter than Monaco and simpler to bundle), xterm.js for
+terminals. Pages poll the API for now; a single live WebSocket per tab can replace that later.
 
 ### Image
 
@@ -239,11 +240,24 @@ Secrets are stored in git, encrypted with SOPS and age.
   key as a second recipient for recovery.
 - In the UI, users with permission can view and edit decrypted values. Novaport re-encrypts and
   commits.
-- At deploy time each value becomes a Swarm secret named `<name>_<short hash of value>`. A changed
-  value creates a new secret and triggers a rolling update. Old unused secrets are cleaned up after
-  a successful deploy.
-- For Compose stacks the values are passed as environment variables or files, depending on how
-  the compose file references them.
+- A compose file uses a value through the standard `environment` secret source:
+
+  ```yaml
+  services:
+    api:
+      secrets: [db_password]
+  secrets:
+    db_password:
+      environment: DB_PASSWORD   # from secrets.env (or .env)
+  ```
+
+  Values can also be interpolated as `${DB_PASSWORD}`, which puts them in the service spec, so
+  prefer secrets where the image supports `/run/secrets`.
+- For Swarm stacks each referenced value becomes a Swarm secret named
+  `<stack>_<secret>_<first 8 hex of sha256(value)>`. A changed value creates a new secret and a
+  rolling update. Secrets from earlier deploys that nothing uses any more are removed afterwards.
+- Compose projects get the values as environment variables of `docker compose`, which supports
+  `environment` secrets natively.
 
 Secret values are never logged, never stored in the database, and never sent to the browser
 unless explicitly revealed by a user with permission. Reveals are audited.

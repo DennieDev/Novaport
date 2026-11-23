@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+import asyncio
 import zlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -29,3 +30,22 @@ async def try_lock(engine: AsyncEngine, name: str) -> AsyncIterator[bool]:
             if acquired:
                 await conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
                 await conn.commit()
+
+
+class LockTimeout(Exception):
+    pass
+
+
+@asynccontextmanager
+async def lock(engine: AsyncEngine, name: str, timeout: float = 30.0) -> AsyncIterator[None]:
+    """Like `try_lock`, but waits up to `timeout` seconds for the lock."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        async with try_lock(engine, name) as acquired:
+            if acquired:
+                yield
+                return
+        if loop.time() >= deadline:
+            raise LockTimeout(f"Timed out waiting for {name}.")
+        await asyncio.sleep(0.25)

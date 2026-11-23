@@ -15,6 +15,7 @@ from novaport.config import get_settings
 from novaport.crypto import generate_key
 from novaport.db import create_engine
 from novaport.migrate import upgrade, wait_for_database
+from novaport.sops import age_recipient, generate_age_key
 
 
 def _server(args: argparse.Namespace) -> int:
@@ -86,6 +87,13 @@ def _generate_key(_: argparse.Namespace) -> int:
     return 0
 
 
+def _generate_age_key(_: argparse.Namespace) -> int:
+    key = generate_age_key()
+    print(f"# public key: {age_recipient(key)}")
+    print(key)
+    return 0
+
+
 def _version(_: argparse.Namespace) -> int:
     print(__version__)
     return 0
@@ -119,6 +127,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     key = sub.add_parser("generate-key", help="print a new value for NOVAPORT_SECRET_KEY")
     key.set_defaults(func=_generate_key)
+
+    age = sub.add_parser("generate-age-key", help="print a new value for NOVAPORT_AGE_KEY")
+    age.set_defaults(func=_generate_age_key)
 
     version = sub.add_parser("version", help="print the version")
     version.set_defaults(func=_version)

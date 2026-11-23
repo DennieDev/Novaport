@@ -167,3 +167,47 @@ async def test_viewing_requires_login(clean_db: str) -> None:
     async for client in client_for(app):
         assert (await client.get("/api/stacks")).status_code == 401
         assert (await client.get("/api/repositories")).status_code == 401
+
+
+async def test_edit_files_through_the_api(api: httpx.AsyncClient, origin: Repo) -> None:
+    origin.write("stacks/web/novaport.yaml", "deploy: manual\n")
+    origin.commit("Manual")
+    repo = await create_repo(api, origin)
+    await api.post(f"/api/repositories/{repo['id']}/sync")
+    stack = (await api.get("/api/stacks")).json()[0]
+    assert stack["edit_mode"] == "commit"
+
+    files = (await api.get(f"/api/stacks/{stack['id']}/files")).json()
+    assert [f["path"] for f in files["files"]] == ["compose.yaml", "novaport.yaml"]
+    assert files["has_secrets"] is False
+    base = files["commit"]
+
+    saved = await api.post(
+        f"/api/stacks/{stack['id']}/files",
+        json={"base_commit": base, "changes": [{"path": ".env", "content": "A=1\n"}]},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["new_revisions"] == 1
+    assert origin.log("%s") == "Update .env in web"
+
+    stale = await api.post(
+        f"/api/stacks/{stack['id']}/files",
+        json={"base_commit": base, "changes": [{"path": ".env", "content": "A=2\n"}]},
+    )
+    assert stale.status_code == 409
+    conflict = stale.json()
+    assert conflict["tip"] == origin.head()
+    assert conflict["conflicts"] == [
+        {"path": ".env", "base": None, "theirs": "A=1\n", "yours": "A=2\n"}
+    ]
+
+    bad = await api.post(
+        f"/api/stacks/{stack['id']}/files",
+        json={"base_commit": origin.head(), "changes": [{"path": "../x", "content": ""}]},
+    )
+    assert bad.status_code == 422
+
+
+async def test_sops_info_without_key(api: httpx.AsyncClient) -> None:
+    info = (await api.get("/api/settings/sops")).json()
+    assert info == {"available": False, "recipient": None, "example": None}

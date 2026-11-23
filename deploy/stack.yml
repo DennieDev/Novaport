@@ -9,6 +9,8 @@
 #   printf %s "postgresql+asyncpg://novaport:$DB_PASSWORD@db:5432/novaport" \
 #     | docker secret create novaport_database_url -
 #   printf %s 'choose-a-long-admin-password' | docker secret create novaport_initial_admin_password -
+#   docker run --rm ghcr.io/denniedev/novaport generate-age-key | tail -1 \
+#     | docker secret create novaport_age_key -
 #
 # Then deploy:
 #
@@ -27,6 +29,7 @@ services:
       - novaport_agent_token
       - novaport_secret_key
       - novaport_initial_admin_password
+      - novaport_age_key
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - data:/var/lib/novaport
@@ -99,4 +102,6 @@ secrets:
   novaport_postgres_password:
     external: true
   novaport_initial_admin_password:
+    external: true
+  novaport_age_key:
     external: true

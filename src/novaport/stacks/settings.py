@@ -6,7 +6,7 @@ import re
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from novaport.models import DeployMode, StackType
+from novaport.models import DeployMode, EditMode, StackType
 
 SETTINGS_FILE = "novaport.yaml"
 COMPOSE_FILES = ("compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml")
@@ -20,6 +20,7 @@ class StackSettings(BaseModel):
 
     type: StackType | None = None
     deploy: DeployMode | None = None
+    edits: EditMode | None = None
 
 
 class InvalidSettings(ValueError):

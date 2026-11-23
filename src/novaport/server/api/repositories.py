@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 
 from novaport.crypto import Cipher, MissingSecretKey, generate_ssh_keypair
-from novaport.models import DeployMode, GitAuth, Repository, Stack
+from novaport.forges import Forge
+from novaport.models import DeployMode, EditMode, GitAuth, Repository, Stack
 from novaport.server.deps import DB, get_settings, require_admin
 from novaport.stacks.sync import Syncer, mirror_path
 
@@ -56,6 +57,10 @@ class RepositoryIn(BaseModel):
     token: str | None = Field(default=None, max_length=1000)
     poll_interval: PollInterval = 300
     default_deploy_mode: DeployMode = DeployMode.MANUAL
+    default_edit_mode: EditMode = EditMode.COMMIT
+    forge: Forge = Forge.NONE
+    forge_api_url: str | None = Field(default=None, max_length=500, pattern=r"^https?://")
+    forge_token: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
     def _token_matches_auth(self) -> Self:
@@ -73,6 +78,10 @@ class RepositoryPatch(BaseModel):
     token: str | None = Field(default=None, max_length=1000)
     poll_interval: PollInterval | None = None
     default_deploy_mode: DeployMode | None = None
+    default_edit_mode: EditMode | None = None
+    forge: Forge | None = None
+    forge_api_url: str | None = Field(default=None, max_length=500)
+    forge_token: str | None = Field(default=None, max_length=1000)
 
 
 class RepositoryOut(BaseModel):
@@ -88,6 +97,10 @@ class RepositoryOut(BaseModel):
     webhook_secret: str
     poll_interval: int
     default_deploy_mode: DeployMode
+    default_edit_mode: EditMode
+    forge: Forge
+    forge_api_url: str | None
+    has_forge_token: bool
     created_at: datetime
     last_synced_at: datetime | None
     last_commit: str | None
@@ -117,6 +130,10 @@ def to_out(repo: Repository, stack_count: int) -> RepositoryOut:
         webhook_secret=repo.webhook_secret,
         poll_interval=repo.poll_interval,
         default_deploy_mode=repo.default_deploy_mode,
+        default_edit_mode=repo.default_edit_mode,
+        forge=Forge(repo.forge),
+        forge_api_url=repo.forge_api_url,
+        has_forge_token=repo.forge_token is not None,
         created_at=repo.created_at,
         last_synced_at=repo.last_synced_at,
         last_commit=repo.last_commit,
@@ -154,6 +171,15 @@ def _apply_auth(repo: Repository, auth: GitAuth, token: str | None, cipher: Ciph
     repo.auth = auth
 
 
+def _apply_forge_token(repo: Repository, token: str | None, cipher: Cipher) -> None:
+    if not token:
+        return
+    try:
+        repo.forge_token = cipher.encrypt(token)
+    except MissingSecretKey as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+
+
 async def _name_taken(db: DB, name: str, exclude: uuid.UUID | None = None) -> bool:
     query = select(Repository.id).where(Repository.name == name)
     if exclude:
@@ -183,9 +209,13 @@ async def create_repository(
         stacks_root=body.stacks_root.strip("/"),
         poll_interval=body.poll_interval,
         default_deploy_mode=body.default_deploy_mode,
+        default_edit_mode=body.default_edit_mode,
+        forge=body.forge,
+        forge_api_url=body.forge_api_url,
         webhook_secret=secrets.token_hex(32),
     )
     _apply_auth(repo, body.auth, body.token, cipher)
+    _apply_forge_token(repo, body.forge_token, cipher)
     db.add(repo)
     await db.commit()
     await db.refresh(repo)
@@ -210,12 +240,15 @@ async def update_repository(
         if await _name_taken(db, body.name, exclude=repo.id):
             raise HTTPException(status.HTTP_409_CONFLICT, "A repository with this name exists.")
         repo.name = body.name
-    for field in ("branch", "poll_interval", "default_deploy_mode"):
+    for field in ("branch", "poll_interval", "default_deploy_mode", "default_edit_mode", "forge"):
         value = getattr(body, field)
         if value is not None:
             setattr(repo, field, value)
     if body.stacks_root is not None:
         repo.stacks_root = body.stacks_root.strip("/")
+    if body.forge_api_url is not None:
+        repo.forge_api_url = body.forge_api_url or None
+    _apply_forge_token(repo, body.forge_token, cipher)
     if body.auth is not None or body.token:
         auth = body.auth or repo.auth
         if auth == GitAuth.TOKEN and not (body.token or repo.token):

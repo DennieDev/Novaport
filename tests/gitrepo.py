@@ -22,6 +22,8 @@ class Repo:
         self.path = path
         path.mkdir(parents=True, exist_ok=True)
         self.git("init", "--quiet", "--initial-branch=main")
+        # Lets Novaport push to this non-bare test repository and updates its files.
+        self.git("config", "receive.denyCurrentBranch", "updateInstead")
 
     @property
     def url(self) -> str:
@@ -44,3 +46,12 @@ class Repo:
         self.git("add", "--all")
         self.git("commit", "--quiet", "--allow-empty", "-m", message)
         return self.git("rev-parse", "HEAD").strip()
+
+    def head(self, ref: str = "HEAD") -> str:
+        return self.git("rev-parse", ref).strip()
+
+    def show(self, path: str, ref: str = "HEAD") -> str:
+        return self.git("show", f"{ref}:{path}")
+
+    def log(self, fmt: str, ref: str = "HEAD") -> str:
+        return self.git("log", "-1", f"--format={fmt}", ref).strip()

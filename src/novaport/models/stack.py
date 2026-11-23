@@ -26,6 +26,11 @@ class DeployMode(StrEnum):
     MANUAL = "manual"
 
 
+class EditMode(StrEnum):
+    COMMIT = "commit"
+    PR = "pr"
+
+
 class DeploymentStatus(StrEnum):
     PENDING = "pending"
     AWAITING_APPROVAL = "awaiting_approval"
@@ -54,6 +59,12 @@ class Repository(Base):
     webhook_secret: Mapped[str] = mapped_column(String(64))
     poll_interval: Mapped[int] = mapped_column(default=300)  # seconds, 0 disables polling
     default_deploy_mode: Mapped[DeployMode] = mapped_column(String(10), default=DeployMode.MANUAL)
+    default_edit_mode: Mapped[EditMode] = mapped_column(
+        String(10), default=EditMode.COMMIT, server_default=EditMode.COMMIT
+    )
+    forge: Mapped[str] = mapped_column(String(10), default="none", server_default="none")
+    forge_api_url: Mapped[str | None] = mapped_column(String(500))
+    forge_token: Mapped[str | None] = mapped_column(Text)  # encrypted
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_commit: Mapped[str | None] = mapped_column(String(64))
@@ -76,6 +87,9 @@ class Stack(Base):
     name: Mapped[str] = mapped_column(String(63))
     type: Mapped[StackType] = mapped_column(String(10), default=StackType.SWARM)
     deploy_mode: Mapped[DeployMode] = mapped_column(String(10), default=DeployMode.MANUAL)
+    edit_mode: Mapped[EditMode] = mapped_column(
+        String(10), default=EditMode.COMMIT, server_default=EditMode.COMMIT
+    )
     config_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     # Encrypts git and registry credentials in the database. Generate one with
     # `novaport generate-key`. Without it, repositories can only use public URLs.
     secret_key: SecretStr | None = None
+    # age secret key (AGE-SECRET-KEY-...) for SOPS-encrypted secrets.env files. Generate one
+    # with `novaport generate-age-key` and add its public key to each repository's .sops.yaml.
+    age_key: SecretStr | None = None
+    sops_binary: str = "sops"
+    # Identity for commits Novaport makes; the author is the logged-in user.
+    commit_name: str = "Novaport"
+    commit_email: str = "novaport@localhost"
     # Git checkouts and SSH known_hosts live here.
     data_dir: Path = Path("/var/lib/novaport")
     # Set to false to run the API without the git poller and deploy worker.

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from novaport.config import Settings
 from novaport.crypto import Cipher
 from novaport.git import Credentials, GitError, GitMirror
-from novaport.locks import try_lock
+from novaport.locks import lock, try_lock
 from novaport.models import GitAuth, Repository, Revision, Stack, StackType
 from novaport.stacks.deployments import deployment_for_new_revision
 from novaport.stacks.settings import (
@@ -76,9 +76,22 @@ class Syncer:
                 repo = await db.get(Repository, repository_id)
                 if repo is None:
                     return SyncResult(skipped=True)
-                result = await self._sync(db, repo)
+                result = await self.sync_locked(db, repo)
                 await db.commit()
                 return result
+
+    async def ensure_commit(self, repo: Repository, commit: str) -> None:
+        """Make sure the local mirror has `commit`, fetching if it doesn't (a fresh data
+        directory after a restart, or a commit that arrived through another replica)."""
+        mirror = mirror_for(self.settings, repo)
+        if await mirror.has_commit(commit):
+            return
+        async with lock(self.engine, f"sync:{repo.id}"):
+            await mirror.fetch(repo.branch, credentials_for(repo, self.cipher))
+
+    async def sync_locked(self, db: AsyncSession, repo: Repository) -> SyncResult:
+        """Sync while the caller already holds this repository's sync lock."""
+        return await self._sync(db, repo)
 
     async def _sync(self, db: AsyncSession, repo: Repository) -> SyncResult:
         mirror = mirror_for(self.settings, repo)
@@ -130,6 +143,7 @@ class Syncer:
             stack.config_error = None
             stack.type = stack_settings.type or StackType.SWARM
             stack.deploy_mode = stack_settings.deploy or repo.default_deploy_mode
+            stack.edit_mode = stack_settings.edits or repo.default_edit_mode
             await db.flush()
 
             tree = await mirror.tree_hash(commit, path)

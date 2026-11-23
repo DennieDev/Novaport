@@ -13,6 +13,7 @@ from novaport.models import (
     DeploymentEvent,
     DeploymentStatus,
     DeployMode,
+    EditMode,
     Revision,
     Stack,
     StackType,
@@ -73,6 +74,7 @@ class StackOut(BaseModel):
     repository: RepositoryRef
     type: StackType
     deploy_mode: DeployMode
+    edit_mode: EditMode
     config_error: str | None
     removed_at: datetime | None
     latest_revision: RevisionOut | None
@@ -136,6 +138,7 @@ async def stack_out(db: DB, stack: Stack) -> StackOut:
         repository=RepositoryRef(id=stack.repository.id, name=stack.repository.name),
         type=stack.type,
         deploy_mode=stack.deploy_mode,
+        edit_mode=stack.edit_mode,
         config_error=stack.config_error,
         removed_at=stack.removed_at,
         latest_revision=revision_out(latest) if latest else None,

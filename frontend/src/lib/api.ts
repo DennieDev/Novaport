@@ -4,7 +4,8 @@ import { goto } from '$app/navigation';
 export class ApiError extends Error {
 	constructor(
 		readonly status: number,
-		message: string
+		message: string,
+		readonly body: unknown = undefined
 	) {
 		super(message);
 	}
@@ -24,13 +25,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 	}
 	if (!response.ok) {
 		let detail = response.statusText;
+		let data: unknown;
 		try {
-			const data = await response.json();
-			if (typeof data.detail === 'string') detail = data.detail;
+			data = await response.json();
+			const message = (data as { detail?: unknown }).detail;
+			if (typeof message === 'string') detail = message;
 		} catch {
 			// Not JSON; keep the status text.
 		}
-		throw new ApiError(response.status, detail);
+		throw new ApiError(response.status, detail, data);
 	}
 	if (response.status === 204) return undefined as T;
 	return (await response.json()) as T;

@@ -64,6 +64,8 @@
 			<dd>{s.type === 'swarm' ? 'Swarm stack' : 'Compose project'}</dd>
 			<dt>Deploy mode</dt>
 			<dd>{s.deploy_mode}</dd>
+			<dt>Edits</dt>
+			<dd>{s.edit_mode === 'pr' ? 'pull request' : 'commit to branch'}</dd>
 			<dt>Running</dt>
 			<dd>
 				{#if s.last_good_revision}
@@ -86,6 +88,10 @@
 		<button onclick={() => deploy()} disabled={busy || !s.latest_revision || !!s.removed_at}>
 			Deploy latest
 		</button>
+		{#if !s.removed_at}
+			<a href="/stacks/{s.id}/edit">Edit files</a>
+			<a href="/stacks/{s.id}/secrets">Secrets</a>
+		{/if}
 		<a href="/services?stack={s.name}">Services</a>
 		{#if error}<span class="error">{error}</span>{/if}
 	</p>

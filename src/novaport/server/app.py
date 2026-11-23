@@ -27,9 +27,19 @@ from novaport.docker.client import (
 )
 from novaport.jobs import Jobs
 from novaport.server.api import agents as agents_api
-from novaport.server.api import auth, cluster, health, repositories, stacks, webhooks
+from novaport.server.api import (
+    auth,
+    cluster,
+    editing,
+    health,
+    repositories,
+    stacks,
+    webhooks,
+)
 from novaport.server.origin import SameOriginMiddleware
 from novaport.server.static import SPAStaticFiles
+from novaport.sops import Sops
+from novaport.stacks.editing import StackEditor
 from novaport.stacks.sync import Syncer, mirror_for
 
 log = logging.getLogger(__name__)
@@ -108,7 +118,15 @@ def create_app(
             reader=lambda: app.state.docker,
             mirror=lambda stack: mirror_for(settings, stack.repository),
             agents=lambda: app.state.agents,
+            sops=lambda: app.state.sops,
+            ensure_commit=lambda stack, commit: syncer.ensure_commit(stack.repository, commit),
         )
+        sops = Sops(
+            settings.sops_binary,
+            settings.age_key.get_secret_value() if settings.age_key else None,
+        )
+        app.state.sops = sops
+        app.state.editor = StackEditor(settings, engine, maker, syncer, cipher, sops, pipeline.cli)
         app.state.cipher = cipher
         app.state.syncer = syncer
         app.state.pipeline = pipeline
@@ -148,6 +166,7 @@ def create_app(
     app.include_router(repositories.router)
     app.include_router(stacks.router)
     app.include_router(webhooks.router)
+    app.include_router(editing.router)
     app.include_router(agents_api.router)
     app.include_router(agents_api.ws_router)
 
