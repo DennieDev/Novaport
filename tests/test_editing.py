@@ -24,7 +24,7 @@ from tests.test_pipeline import FakeCli
 
 pytestmark = pytest.mark.postgres
 
-USER = User(id=uuid.uuid4(), username="dana", email="dana@example.com", is_admin=True)
+USER = User(id=uuid.uuid4(), username="dana", email="dana@example.com")
 
 
 class Env:

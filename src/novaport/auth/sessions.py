@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from novaport.models import Session, User
+from novaport.models import LoginState, Session, User
 
 # Avoid a write on every request; last_seen and expiry only move after this much time.
 TOUCH_INTERVAL = timedelta(minutes=1)
@@ -77,5 +77,6 @@ async def delete_session(db: AsyncSession, token: str) -> None:
 
 async def delete_expired_sessions(db: AsyncSession) -> int:
     result = await db.execute(delete(Session).where(Session.expires_at <= _now()))
+    await db.execute(delete(LoginState).where(LoginState.expires_at <= _now()))
     await db.commit()
     return result.rowcount or 0  # type: ignore[attr-defined]

@@ -5,34 +5,43 @@
 	import Status from '#lib/components/Status.svelte';
 	import { ago, bytes, degraded, replicas } from '#lib/format.ts';
 	import { poll } from '#lib/poll.svelte.ts';
+	import { can } from '#lib/session.svelte.ts';
 	import type { Deployment, Node, ServiceSummary, SystemInfo, Task } from '#lib/types.ts';
 
-	const system = poll<SystemInfo>(() => '/system');
-	const isManager = $derived(system.data?.swarm.is_manager ?? false);
+	// Cluster-wide views need a global role; with only stack roles, show stacks and deployments.
+	const cluster = can('viewer');
+	const system = cluster ? poll<SystemInfo>(() => '/system') : undefined;
+	const isManager = $derived(system?.data?.swarm.is_manager ?? false);
 
 	const services = poll<ServiceSummary[]>(() => '/services');
-	const nodes = poll<Node[]>(() => '/nodes');
-	const tasks = poll<Task[]>(() => '/tasks');
+	const nodes = cluster ? poll<Node[]>(() => '/nodes') : undefined;
+	const tasks = cluster ? poll<Task[]>(() => '/tasks') : undefined;
 	const deployments = poll<Deployment[]>(() => '/deployments?limit=10', 5000);
 	const waiting = $derived(
 		(deployments.data ?? []).filter((d) => d.status === 'awaiting_approval')
 	);
 
 	const troubled = $derived((services.data ?? []).filter(degraded));
-	const badNodes = $derived((nodes.data ?? []).filter((n) => n.state !== 'ready'));
+	const badNodes = $derived((nodes?.data ?? []).filter((n) => n.state !== 'ready'));
 	const serviceNames = $derived(new Map((services.data ?? []).map((s) => [s.id, s.name])));
 	// Errors from the last hour, newest first (the API already sorts).
 	const recentErrors = $derived(
-		(tasks.data ?? [])
+		(tasks?.data ?? [])
 			.filter((t) => t.error && Date.now() - new Date(t.updated_at).getTime() < 3_600_000)
 			.slice(0, 15)
 	);
 </script>
 
 <h1>Overview</h1>
-<Status loading={system.loading && !system.data} error={system.error} />
+{#if system}
+	<Status loading={system.loading && !system.data} error={system.error} />
+{:else}
+	<p class="muted">
+		You have access to some stacks only. See them under <a href="/stacks">Stacks</a>.
+	</p>
+{/if}
 
-{#if system.data}
+{#if system?.data}
 	{@const s = system.data}
 	<div class="panel">
 		<dl class="kv">

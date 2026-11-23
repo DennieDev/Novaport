@@ -296,7 +296,13 @@ cached to stay within registry rate limits.
 
 ## Authentication and authorization
 
-- OIDC (authorization code flow with PKCE). Any compliant provider.
+- OIDC (authorization code flow with PKCE). Any compliant provider. Providers are configured in
+  the UI; client secrets are encrypted in the database like git credentials.
+- The login state is single-use and bound to the browser that started it by a short-lived cookie,
+  so a callback URL can't log someone else in. ID tokens are checked against the provider's JWKS
+  (asymmetric algorithms only), with issuer, audience, expiry, and nonce.
+- OIDC users are matched on issuer and subject, never on email or username. They are created on
+  first login with no roles.
 - A local admin account exists for bootstrap and break-glass. It can be disabled.
 - Sessions are server-side, referenced by an HTTP-only, `SameSite=Lax` cookie.
 
@@ -306,17 +312,27 @@ cached to stay within registry rate limits.
 |---|---|
 | Viewer | See stacks, services, logs, and deploy history. |
 | Operator | Everything Viewer can, plus deploy, approve, roll back, restart, and open terminals. |
-| Editor | Everything Operator can, plus edit stacks and secrets. |
+| Editor | Everything Operator can, plus edit stacks and reveal or edit secrets. |
 | Admin | Everything, including endpoints, repositories, registries, users, and settings. |
 
-Roles are assigned globally or per stack, to users or to OIDC groups. A claim-to-group mapping is
-configurable per provider.
+Roles are bound globally or per stack, to users or to groups. The highest applicable role counts.
+
+- A role on a stack covers that stack, the services of the Docker stack with the same name, their
+  tasks, logs, and terminals. Users with only stack roles see only those services.
+- Nodes, networks, Swarm secrets and configs, and agent node views need a global role.
+- Group membership comes from a provider's groups claim (a dotted path such as
+  `realm_access.roles` reaches nested claims) through per-provider mappings from claim values to
+  Novaport groups, and is synced on every login. Members added by hand are left alone. When the
+  ID token has no groups claim, Novaport asks the userinfo endpoint.
+- Novaport refuses changes that would leave no enabled user with the global admin role.
 
 ### Audit log
 
 Every state-changing action and every secret reveal or terminal session is recorded: who, what,
-when, which stack, from which IP, and the outcome. The audit log is append-only in the
-application.
+when, which stack, from which IP, and the outcome (`success`, `failed`, or `denied`). Denied
+state-changing requests are recorded too. Secret values are never written to it; only key names.
+Terminal sessions are recorded when the connection to the agent is established. The audit log is
+append-only in the application.
 
 ## Registries
 
@@ -341,9 +357,10 @@ Each channel can subscribe to events globally or per stack.
 
 Main tables (columns abbreviated):
 
-- `users`: id, subject, issuer, name, email, is_local, disabled
-- `groups`, `group_members`
-- `role_bindings`: subject (user or group), role, scope (global or stack id)
+- `users`: id, username, name, email, password_hash (local users), issuer, subject, disabled
+- `groups`, `group_members` (provider id for memberships synced from a groups claim)
+- `oidc_providers`, `oidc_group_mappings`: claim value to group, per provider
+- `role_bindings`: user or group, role, stack id (NULL for global)
 - `endpoints`: id, name, kind (swarm, standalone), connection
 - `repositories`: id, url, branch, stacks_root, credentials, webhook secret, poll interval
 - `stacks`: id, repository_id, path, name, endpoint_id, type, deploy_mode, edits_mode,
@@ -355,7 +372,7 @@ Main tables (columns abbreviated):
 - `image_checks`: id, stack_id, service, current_ref, candidate_ref, checked_at, action_taken
 - `registries`: id, host, username, encrypted secret
 - `notification_channels`, `notification_subscriptions`
-- `audit_log`: id, at, user_id, action, target, ip, outcome, details
+- `audit_log`: id, at, user_id, username, action, target, stack_id, ip, outcome, details
 - `settings`
 
 Deployment status values: `pending`, `awaiting_approval`, `running`, `succeeded`, `failed`,

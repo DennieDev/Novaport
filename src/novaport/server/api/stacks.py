@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from novaport.auth.access import Access
 from novaport.models import (
     Deployment,
     DeploymentEvent,
@@ -15,10 +16,11 @@ from novaport.models import (
     DeployMode,
     EditMode,
     Revision,
+    Role,
     Stack,
     StackType,
 )
-from novaport.server.deps import DB, AdminUser, current_user
+from novaport.server.deps import DB, CurrentAccess, current_user
 from novaport.stacks.deployments import WAITING, queue_deployment
 
 router = APIRouter(prefix="/api", tags=["stacks"], dependencies=[Depends(current_user)])
@@ -168,24 +170,38 @@ async def _get_deployment(db: DB, deployment_id: uuid.UUID) -> Deployment:
     return deployment
 
 
+def _audit_deployment(access: Access, db: DB, action: str, deployment: Deployment) -> None:
+    access.audit(
+        db,
+        action,
+        target=deployment.stack.name,
+        stack_id=deployment.stack_id,
+        details={"deployment": str(deployment.id), "commit": deployment.revision.commit},
+    )
+
+
 def _wake(request: Request) -> None:
     if request.app.state.jobs is not None:
         request.app.state.jobs.wake()
 
 
 @router.get("/stacks")
-async def list_stacks(db: DB) -> list[StackOut]:
+async def list_stacks(db: DB, access: CurrentAccess) -> list[StackOut]:
     stacks = await db.scalars(select(Stack).options(*STACK_LOAD).order_by(Stack.name))
-    return [await stack_out(db, s) for s in stacks]
+    return [await stack_out(db, s) for s in access.stacks_with(Role.VIEWER, stacks)]
 
 
 @router.get("/stacks/{stack_id}")
-async def get_stack(stack_id: uuid.UUID, db: DB) -> StackOut:
+async def get_stack(stack_id: uuid.UUID, db: DB, access: CurrentAccess) -> StackOut:
+    access.require(Role.VIEWER, stack_id)
     return await stack_out(db, await _get_stack(db, stack_id))
 
 
 @router.get("/stacks/{stack_id}/revisions")
-async def stack_revisions(stack_id: uuid.UUID, db: DB, limit: Limit = 50) -> list[RevisionOut]:
+async def stack_revisions(
+    stack_id: uuid.UUID, db: DB, access: CurrentAccess, limit: Limit = 50
+) -> list[RevisionOut]:
+    access.require(Role.VIEWER, stack_id)
     await _get_stack(db, stack_id)
     revisions = await db.scalars(
         select(Revision)
@@ -197,7 +213,10 @@ async def stack_revisions(stack_id: uuid.UUID, db: DB, limit: Limit = 50) -> lis
 
 
 @router.get("/stacks/{stack_id}/deployments")
-async def stack_deployments(stack_id: uuid.UUID, db: DB, limit: Limit = 50) -> list[DeploymentOut]:
+async def stack_deployments(
+    stack_id: uuid.UUID, db: DB, access: CurrentAccess, limit: Limit = 50
+) -> list[DeploymentOut]:
+    access.require(Role.VIEWER, stack_id)
     await _get_stack(db, stack_id)
     deployments = await db.scalars(
         select(Deployment)
@@ -211,9 +230,10 @@ async def stack_deployments(stack_id: uuid.UUID, db: DB, limit: Limit = 50) -> l
 
 @router.post("/stacks/{stack_id}/deploy", status_code=status.HTTP_202_ACCEPTED)
 async def deploy_stack(
-    stack_id: uuid.UUID, body: DeployRequest, request: Request, db: DB, user: AdminUser
+    stack_id: uuid.UUID, body: DeployRequest, request: Request, db: DB, access: CurrentAccess
 ) -> DeploymentOut:
     """Deploy a revision now: the latest one by default, or an older one to roll back."""
+    access.require(Role.OPERATOR, stack_id, action="stack.deploy")
     stack = await _get_stack(db, stack_id)
     if stack.removed_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "This stack was removed from git.")
@@ -226,26 +246,39 @@ async def deploy_stack(
     if revision is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Revision not found.")
 
-    deployment = await queue_deployment(db, stack, revision, trigger="manual", user_id=user.id)
+    deployment = await queue_deployment(
+        db, stack, revision, trigger="manual", user_id=access.user.id
+    )
+    await db.flush()
+    access.audit(
+        db,
+        "stack.deploy",
+        target=stack.name,
+        stack_id=stack.id,
+        details={"commit": revision.commit, "deployment": str(deployment.id)},
+    )
     await db.commit()
     _wake(request)
     return deployment_out(await _get_deployment(db, deployment.id))
 
 
 @router.get("/deployments")
-async def recent_deployments(db: DB, limit: Limit = 20) -> list[DeploymentOut]:
-    deployments = await db.scalars(
-        select(Deployment)
-        .options(*DEPLOYMENT_LOAD)
-        .order_by(Deployment.created_at.desc())
-        .limit(limit)
-    )
+async def recent_deployments(
+    db: DB, access: CurrentAccess, limit: Limit = 20
+) -> list[DeploymentOut]:
+    query = select(Deployment).options(*DEPLOYMENT_LOAD)
+    if not access.can(Role.VIEWER):
+        query = query.where(Deployment.stack_id.in_(list(access.stack_roles)))
+    deployments = await db.scalars(query.order_by(Deployment.created_at.desc()).limit(limit))
     return [deployment_out(d) for d in deployments]
 
 
 @router.get("/deployments/{deployment_id}")
-async def get_deployment(deployment_id: uuid.UUID, db: DB) -> DeploymentDetail:
+async def get_deployment(
+    deployment_id: uuid.UUID, db: DB, access: CurrentAccess
+) -> DeploymentDetail:
     deployment = await _get_deployment(db, deployment_id)
+    access.require(Role.VIEWER, deployment.stack_id)
     events = await db.scalars(
         select(DeploymentEvent)
         .where(DeploymentEvent.deployment_id == deployment_id)
@@ -259,25 +292,31 @@ async def get_deployment(deployment_id: uuid.UUID, db: DB) -> DeploymentDetail:
 
 @router.post("/deployments/{deployment_id}/approve")
 async def approve_deployment(
-    deployment_id: uuid.UUID, request: Request, db: DB, user: AdminUser
+    deployment_id: uuid.UUID, request: Request, db: DB, access: CurrentAccess
 ) -> DeploymentOut:
     deployment = await _get_deployment(db, deployment_id)
+    access.require(Role.OPERATOR, deployment.stack_id, action="deployment.approve")
     if deployment.status != DeploymentStatus.AWAITING_APPROVAL:
         raise HTTPException(status.HTTP_409_CONFLICT, "This deployment isn't waiting for approval.")
     deployment.status = DeploymentStatus.PENDING
-    deployment.approved_by_id = user.id
+    deployment.approved_by_id = access.user.id
+    _audit_deployment(access, db, "deployment.approve", deployment)
     await db.commit()
     _wake(request)
     return deployment_out(deployment)
 
 
 @router.post("/deployments/{deployment_id}/cancel")
-async def cancel_deployment(deployment_id: uuid.UUID, db: DB, user: AdminUser) -> DeploymentOut:
+async def cancel_deployment(
+    deployment_id: uuid.UUID, db: DB, access: CurrentAccess
+) -> DeploymentOut:
     deployment = await _get_deployment(db, deployment_id)
+    access.require(Role.OPERATOR, deployment.stack_id, action="deployment.cancel")
     if deployment.status not in WAITING:
         raise HTTPException(status.HTTP_409_CONFLICT, "Only waiting deployments can be cancelled.")
     deployment.status = DeploymentStatus.CANCELLED
-    deployment.error = f"Cancelled by {user.username}."
+    deployment.error = f"Cancelled by {access.user.username}."
     deployment.finished_at = datetime.now(UTC)
+    _audit_deployment(access, db, "deployment.cancel", deployment)
     await db.commit()
     return deployment_out(deployment)

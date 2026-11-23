@@ -8,9 +8,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from novaport.auth.access import Access
 from novaport.locks import LockTimeout
-from novaport.models import Stack
-from novaport.server.deps import DB, AdminUser, current_user
+from novaport.models import Outcome, Role, Stack
+from novaport.server.deps import DB, CurrentAccess, current_user
 from novaport.sops import KEY_PATTERN, Sops
 from novaport.stacks.editing import (
     EditConflict,
@@ -119,7 +120,8 @@ def conflict_response(exc: EditConflict) -> JSONResponse:
 
 
 @router.get("/stacks/{stack_id}/files")
-async def get_files(stack_id: uuid.UUID, db: DB, editor: Editor) -> FilesOut:
+async def get_files(stack_id: uuid.UUID, db: DB, access: CurrentAccess, editor: Editor) -> FilesOut:
+    access.require(Role.VIEWER, stack_id)
     stack = await _stack(db, stack_id)
     try:
         result = await editor.files(stack)
@@ -130,37 +132,86 @@ async def get_files(stack_id: uuid.UUID, db: DB, editor: Editor) -> FilesOut:
     return FilesOut(commit=result.commit, files=entries, has_secrets=has_secrets)
 
 
+async def _audit_save(
+    db: DB,
+    access: Access,
+    action: str,
+    stack: Stack,
+    details: dict[str, object],
+    result: EditResult | None = None,
+    error: Exception | None = None,
+) -> None:
+    if result is not None:
+        details = {**details, "commit": result.commit, "branch": result.branch}
+        if result.pull_request_url:
+            details["pull_request"] = result.pull_request_url
+    if error is not None:
+        details = {**details, "error": str(error)[:500]}
+    access.audit(
+        db,
+        action,
+        outcome=Outcome.SUCCESS if error is None else Outcome.FAILED,
+        target=stack.name,
+        stack_id=stack.id,
+        details=details,
+    )
+    await db.commit()
+
+
 @router.post("/stacks/{stack_id}/files", response_model=SaveResult)
 async def save_files(
-    stack_id: uuid.UUID, body: SaveFiles, request: Request, db: DB, user: AdminUser, editor: Editor
+    stack_id: uuid.UUID,
+    body: SaveFiles,
+    request: Request,
+    db: DB,
+    access: CurrentAccess,
+    editor: Editor,
 ) -> SaveResult | JSONResponse:
+    access.require(Role.EDITOR, stack_id, action="stack.edit")
     stack = await _stack(db, stack_id)
     paths = [c.path for c in body.changes]
+    details: dict[str, object] = {"files": paths}
     try:
         result = await editor.save(
             stack,
-            user,
+            access.user,
             body.base_commit,
             {c.path: c.content for c in body.changes},
             body.message or default_message(stack, paths),
             validate=body.validate_compose,
         )
     except EditConflict as exc:
+        await _audit_save(db, access, "stack.edit", stack, details, error=exc)
         return conflict_response(exc)
     except (EditError, LockTimeout) as exc:
+        await _audit_save(db, access, "stack.edit", stack, details, error=exc)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+    await _audit_save(db, access, "stack.edit", stack, details, result)
     return _result(request, result)
 
 
 @router.get("/stacks/{stack_id}/secrets")
 async def get_secrets(
-    stack_id: uuid.UUID, db: DB, user: AdminUser, editor: Editor, reveal: bool = False
+    stack_id: uuid.UUID, db: DB, access: CurrentAccess, editor: Editor, reveal: bool = False
 ) -> SecretsOut:
+    if reveal:
+        access.require(Role.EDITOR, stack_id, action="secrets.reveal")
+    else:
+        access.require(Role.VIEWER, stack_id)
     stack = await _stack(db, stack_id)
     try:
         commit, values = await editor.read_secrets(stack)
     except EditError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+    if reveal:
+        access.audit(
+            db,
+            "secrets.reveal",
+            target=stack.name,
+            stack_id=stack.id,
+            details={"commit": commit, "keys": sorted(values)},
+        )
+        await db.commit()
     return SecretsOut(commit=commit, keys=sorted(values), values=values if reveal else None)
 
 
@@ -170,28 +221,33 @@ async def save_secrets(
     body: SaveSecrets,
     request: Request,
     db: DB,
-    user: AdminUser,
+    access: CurrentAccess,
     editor: Editor,
 ) -> SaveResult | JSONResponse:
+    access.require(Role.EDITOR, stack_id, action="secrets.edit")
     stack = await _stack(db, stack_id)
     for key in [*body.set, *body.remove]:
         if not KEY_PATTERN.match(key):
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_CONTENT, f"{key!r} is not a valid variable name."
             )
+    details: dict[str, object] = {"set": sorted(body.set), "removed": sorted(body.remove)}
     try:
         result = await editor.save_secrets(
             stack,
-            user,
+            access.user,
             body.base_commit,
             body.set,
             body.remove,
             body.message or f"Update secrets for {stack.name}",
         )
     except EditConflict as exc:
+        await _audit_save(db, access, "secrets.edit", stack, details, error=exc)
         return conflict_response(exc)
     except (EditError, LockTimeout) as exc:
+        await _audit_save(db, access, "secrets.edit", stack, details, error=exc)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+    await _audit_save(db, access, "secrets.edit", stack, details, result)
     return _result(request, result)
 
 

@@ -2,9 +2,11 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api, ApiError, errorMessage } from '#lib/api.ts';
+	import { can } from '#lib/session.svelte.ts';
 	import type { SaveResult, SecretsData, SopsInfo, Stack } from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
+	const editable = $derived(can('editor', id));
 
 	let stack = $state<Stack | undefined>();
 	let sops = $state<SopsInfo | undefined>();
@@ -114,7 +116,7 @@
 				<th>Name</th>
 				<th>
 					Value
-					{#if values === null && keys.length}
+					{#if values === null && keys.length && editable}
 						<button class="link" onclick={() => load(true)}>reveal</button>
 					{/if}
 				</th>
@@ -135,11 +137,13 @@
 							<button class="link" onclick={() => (edits[key] = values?.[key] ?? '')}>change</button>
 						{:else}
 							<span class="muted">••••••••</span>
-							<button class="link" onclick={() => (edits[key] = '')}>change</button>
+							{#if editable}
+								<button class="link" onclick={() => (edits[key] = '')}>change</button>
+							{/if}
 						{/if}
 					</td>
 					<td>
-						{#if !removed.includes(key)}
+						{#if !removed.includes(key) && editable}
 							<button class="link" onclick={() => remove(key)}>remove</button>
 						{/if}
 					</td>
@@ -150,6 +154,7 @@
 		</tbody>
 	</table>
 
+	{#if editable}
 	<p class="row">
 		<input bind:value={newKey} placeholder="NEW_SECRET_NAME" />
 		<button onclick={add}>Add</button>
@@ -159,6 +164,7 @@
 		<input class="grow" bind:value={message} placeholder="Commit message (optional)" />
 		<button onclick={save} disabled={busy || !dirty}>Save</button>
 	</p>
+	{/if}
 	{#if sops?.recipient}
 		<p class="muted small">
 			Novaport's public key: <code>{sops.recipient}</code>. Add it to the repository's

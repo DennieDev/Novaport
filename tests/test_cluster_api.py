@@ -1,28 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-import uuid
 from collections.abc import AsyncIterator
 
 import httpx
 import pytest
-from fastapi import FastAPI
 
 from novaport.docker.client import DockerUnavailable, NotSwarmManager
-from novaport.models import User
 from novaport.server.app import create_app
-from novaport.server.deps import current_user
-from tests.conftest import client_for, make_settings
+from tests.conftest import as_admin, client_for, make_settings
 from tests.fakes import FakeReader
-
-
-def _logged_in(app: FastAPI) -> FastAPI:
-    user = User(id=uuid.uuid4(), username="admin", is_admin=True, disabled=False)
-    app.dependency_overrides[current_user] = lambda: user
-    return app
 
 
 @pytest.fixture
 async def api(reader: FakeReader) -> AsyncIterator[httpx.AsyncClient]:
-    async for client in client_for(_logged_in(create_app(make_settings(), reader=reader))):
+    async for client in client_for(as_admin(create_app(make_settings(), reader=reader))):
         yield client
 
 
@@ -93,7 +83,7 @@ async def test_docker_down(api: httpx.AsyncClient, reader: FakeReader) -> None:
 
 
 async def test_no_docker_configured() -> None:
-    app = _logged_in(create_app(make_settings()))
+    app = as_admin(create_app(make_settings()))
     async for client in client_for(app):
         app.state.docker = None
         response = await client.get("/api/services")

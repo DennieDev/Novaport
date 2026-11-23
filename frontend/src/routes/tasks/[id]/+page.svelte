@@ -6,6 +6,7 @@
 	import Status from '#lib/components/Status.svelte';
 	import { ago, shortId } from '#lib/format.ts';
 	import { poll } from '#lib/poll.svelte.ts';
+	import { canSomewhere } from '#lib/session.svelte.ts';
 	import type { Task } from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
@@ -38,7 +39,7 @@
 		</dl>
 	</div>
 
-	{#if t.state === 'running'}
+	{#if t.state === 'running' && canSomewhere('operator')}
 		<p><a href="/tasks/{t.id}/terminal">Open a terminal</a></p>
 	{/if}
 

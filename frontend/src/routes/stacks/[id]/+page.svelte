@@ -8,6 +8,7 @@
 	import Status from '#lib/components/Status.svelte';
 	import { ago } from '#lib/format.ts';
 	import { poll } from '#lib/poll.svelte.ts';
+	import { can } from '#lib/session.svelte.ts';
 	import type { Deployment, Revision, Stack } from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
@@ -85,14 +86,17 @@
 	</div>
 
 	<p class="actions">
-		<button onclick={() => deploy()} disabled={busy || !s.latest_revision || !!s.removed_at}>
-			Deploy latest
-		</button>
+		{#if can('operator', s.id)}
+			<button onclick={() => deploy()} disabled={busy || !s.latest_revision || !!s.removed_at}>
+				Deploy latest
+			</button>
+		{/if}
 		{#if !s.removed_at}
-			<a href="/stacks/{s.id}/edit">Edit files</a>
+			<a href="/stacks/{s.id}/edit">{can('editor', s.id) ? 'Edit files' : 'Files'}</a>
 			<a href="/stacks/{s.id}/secrets">Secrets</a>
 		{/if}
 		<a href="/services?stack={s.name}">Services</a>
+		{#if can('admin')}<a href="/access/bindings?stack={s.id}">Access</a>{/if}
 		{#if error}<span class="error">{error}</span>{/if}
 	</p>
 
@@ -123,7 +127,7 @@
 					<td class="muted">{r.author}</td>
 					<td class="muted">{ago(r.committed_at)}</td>
 					<td>
-						{#if r.id !== s.last_good_revision?.id && !s.removed_at}
+						{#if r.id !== s.last_good_revision?.id && !s.removed_at && can('operator', s.id)}
 							<button class="link" onclick={() => deploy(r)} disabled={busy}>deploy</button>
 						{/if}
 					</td>

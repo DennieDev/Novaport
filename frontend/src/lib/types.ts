@@ -1,8 +1,100 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+export type Role = 'viewer' | 'operator' | 'editor' | 'admin';
+
 export interface Me {
 	id: string;
 	username: string;
-	is_admin: boolean;
+	name: string | null;
+	email: string | null;
+	local: boolean;
+	global_role: Role | null;
+	stack_roles: Record<string, Role>;
+}
+
+export interface ProviderLink {
+	slug: string;
+	display_name: string;
+	login_url: string;
+}
+
+export interface GroupRef {
+	id: string;
+	name: string;
+	synced: boolean;
+}
+
+export interface User {
+	id: string;
+	username: string;
+	name: string | null;
+	email: string | null;
+	local: boolean;
+	issuer: string | null;
+	disabled: boolean;
+	created_at: string;
+	last_login_at: string | null;
+	groups: GroupRef[];
+}
+
+export interface Group {
+	id: string;
+	name: string;
+	description: string;
+	created_at: string;
+	members: { user_id: string; username: string; synced: boolean }[];
+}
+
+export interface GroupMapping {
+	claim_value: string;
+	group_id: string;
+	group_name?: string;
+}
+
+export interface OidcProvider {
+	id: string;
+	slug: string;
+	display_name: string;
+	issuer: string;
+	client_id: string;
+	has_client_secret: boolean;
+	scopes: string;
+	username_claim: string;
+	groups_claim: string;
+	enabled: boolean;
+	redirect_uri: string;
+	mappings: GroupMapping[];
+}
+
+export interface ProviderCheck {
+	ok: boolean;
+	error: string | null;
+	authorization_endpoint: string | null;
+	token_endpoint: string | null;
+	userinfo_endpoint: string | null;
+}
+
+export interface RoleBinding {
+	id: string;
+	user_id: string | null;
+	group_id: string | null;
+	subject: string;
+	role: Role;
+	stack_id: string | null;
+	stack_name: string | null;
+	created_at: string;
+}
+
+export interface AuditEntry {
+	id: number;
+	at: string;
+	user_id: string | null;
+	username: string | null;
+	action: string;
+	target: string | null;
+	stack_id: string | null;
+	ip: string | null;
+	outcome: 'success' | 'failed' | 'denied';
+	details: Record<string, unknown>;
 }
 
 export interface SystemInfo {

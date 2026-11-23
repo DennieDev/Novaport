@@ -44,7 +44,8 @@ async def test_initial_admin_can_log_in(app_client: httpx.AsyncClient) -> None:
 
     me = await app_client.get("/api/auth/me")
     assert me.json()["username"] == "admin"
-    assert me.json()["is_admin"]
+    assert me.json()["global_role"] == "admin"
+    assert me.json()["local"]
 
     assert (await app_client.get("/api/services")).status_code == 200
 

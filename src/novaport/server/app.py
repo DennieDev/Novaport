@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import aiodocker
+import httpx
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -11,6 +12,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from novaport import __version__
 from novaport.agents.pool import AgentPool, Agents
+from novaport.auth.access import Forbidden, record
+from novaport.auth.oidc import OidcClient
 from novaport.auth.ratelimit import LoginThrottle
 from novaport.auth.users import ensure_initial_admin
 from novaport.config import Settings, get_settings
@@ -26,6 +29,8 @@ from novaport.docker.client import (
     NotSwarmManager,
 )
 from novaport.jobs import Jobs
+from novaport.models import Outcome
+from novaport.server.api import access as access_api
 from novaport.server.api import agents as agents_api
 from novaport.server.api import (
     auth,
@@ -36,7 +41,7 @@ from novaport.server.api import (
     stacks,
     webhooks,
 )
-from novaport.server.origin import SameOriginMiddleware
+from novaport.server.origin import SAFE_METHODS, SameOriginMiddleware
 from novaport.server.static import SPAStaticFiles
 from novaport.sops import Sops
 from novaport.stacks.editing import StackEditor
@@ -63,6 +68,24 @@ def _install_error_handlers(app: FastAPI) -> None:
         log.warning("Docker unavailable: %s", exc)
         return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Docker is unavailable.")
 
+    @app.exception_handler(Forbidden)
+    async def forbidden(request: Request, exc: Forbidden) -> JSONResponse:
+        access = getattr(request.state, "access", None)
+        if access is not None and request.method not in SAFE_METHODS:
+            async with request.app.state.sessionmaker() as db:
+                record(
+                    db,
+                    exc.action or "request",
+                    user=access.user,
+                    ip=access.ip,
+                    outcome=Outcome.DENIED,
+                    target=exc.target,
+                    stack_id=exc.stack_id,
+                    details={"method": request.method, "path": request.url.path},
+                )
+                await db.commit()
+        return _error(status.HTTP_403_FORBIDDEN, str(exc))
+
     @app.exception_handler(aiodocker.DockerError)
     async def docker_error(_: Request, exc: aiodocker.DockerError) -> JSONResponse:
         return _error(status.HTTP_502_BAD_GATEWAY, exc.message)
@@ -81,6 +104,7 @@ def create_app(
     reader: ClusterReader | None = None,
     cli: DockerCli | None = None,
     agents: Agents | None = None,
+    http_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
 
@@ -107,6 +131,9 @@ def create_app(
 
         pool = AgentPool(settings) if agents is None else None
         app.state.agents = agents or pool
+
+        http = httpx.AsyncClient(timeout=10, transport=http_transport)
+        app.state.oidc = OidcClient(http)
 
         cipher = Cipher(settings.secret_key.get_secret_value() if settings.secret_key else None)
         syncer = Syncer(settings, engine, maker, cipher)
@@ -143,6 +170,7 @@ def create_app(
                 await pool.close()
             if docker is not None:
                 await docker.close()
+            await http.aclose()
             await engine.dispose()
 
     app = FastAPI(
@@ -161,6 +189,7 @@ def create_app(
 
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(access_api.router)
     app.include_router(cluster.router)
     app.include_router(cluster.ws_router)
     app.include_router(repositories.router)

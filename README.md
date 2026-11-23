@@ -39,6 +39,23 @@ Reference a value from a compose file with `secrets: name: environment: KEY`. No
 into a Swarm secret whose name includes a hash of the value, so rotating a secret is a normal
 rolling update.
 
+## Login and roles
+
+The first admin logs in with a password. Add an OpenID Connect provider under Access → Login
+providers; the page shows the redirect URI to register with the provider. Behind a proxy, set
+`NOVAPORT_PUBLIC_URL` (for example `https://novaport.example.com`) so the redirect URI uses the
+external address.
+
+Users from a provider start without roles. Map values of the provider's groups claim to Novaport
+groups, then give the groups a role, either on everything or on single stacks:
+
+- viewer: stacks, services, logs, history
+- operator: also deploy, approve, roll back, and open terminals
+- editor: also edit files and secrets
+- admin: everything, including repositories and access
+
+Logins, changes, secret reveals, terminal sessions, and refused attempts end up in the audit log.
+
 ## Development
 
 Requirements: [uv](https://docs.astral.sh/uv/), Docker, and Node.js 22+ for the frontend.

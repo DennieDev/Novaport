@@ -2,6 +2,7 @@
 import asyncio
 import contextlib
 import logging
+from collections.abc import Mapping
 from typing import Annotated, Any
 from urllib.parse import urlencode
 
@@ -13,10 +14,21 @@ from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
 from novaport.agents.pool import AgentError, Agents, AgentUnavailable
+from novaport.auth.access import Access, Forbidden
 from novaport.docker import views
-from novaport.docker.client import ClusterReader, NotFound
-from novaport.models import Session
-from novaport.server.deps import Reader, authenticate, current_user, get_reader
+from novaport.docker.client import ClusterReader, DockerUnavailable, NotFound
+from novaport.models import Outcome, Role
+from novaport.server.deps import (
+    DB,
+    CurrentAccess,
+    OperatorAccess,
+    Reader,
+    ViewerAccess,
+    current_user,
+    get_reader,
+    require_service_role,
+    websocket_access,
+)
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +68,7 @@ def _require_enabled(agents: Agents) -> None:
 
 
 @router.get("/agents")
-async def list_agents(agents: AgentsDep, refresh: bool = False) -> AgentsOut:
+async def list_agents(agents: AgentsDep, _: ViewerAccess, refresh: bool = False) -> AgentsOut:
     found = await agents.list(refresh=refresh)
     return AgentsOut(
         enabled=agents.enabled,
@@ -65,31 +77,41 @@ async def list_agents(agents: AgentsDep, refresh: bool = False) -> AgentsOut:
 
 
 @router.get("/nodes/{node_id}/disk")
-async def node_disk(node_id: str, agents: AgentsDep) -> Any:
+async def node_disk(node_id: str, agents: AgentsDep, _: ViewerAccess) -> Any:
     _require_enabled(agents)
     return await agents.get(node_id, "/disk")
 
 
 @router.get("/nodes/{node_id}/images")
-async def node_images(node_id: str, agents: AgentsDep) -> Any:
+async def node_images(node_id: str, agents: AgentsDep, _: ViewerAccess) -> Any:
     _require_enabled(agents)
     return await agents.get(node_id, "/images")
 
 
 @router.get("/nodes/{node_id}/volumes")
-async def node_volumes(node_id: str, agents: AgentsDep) -> Any:
+async def node_volumes(node_id: str, agents: AgentsDep, _: ViewerAccess) -> Any:
     _require_enabled(agents)
     return await agents.get(node_id, "/volumes")
 
 
 @router.get("/nodes/{node_id}/volumes/{name}/files")
-async def node_volume_files(node_id: str, name: str, agents: AgentsDep, path: str = "/") -> Any:
+async def node_volume_files(
+    node_id: str, name: str, agents: AgentsDep, _: OperatorAccess, path: str = "/"
+) -> Any:
     _require_enabled(agents)
     return await agents.get(node_id, f"/volumes/{name}/files", {"path": path})
 
 
-async def _task_container(reader: ClusterReader, task_id: str) -> tuple[str, str]:
-    task = await reader.task(task_id)
+async def _require_task_role(
+    db: Any, reader: ClusterReader, access: Access, role: Role, task: Mapping[str, Any]
+) -> None:
+    if access.can(role):
+        return
+    service = await reader.service(task.get("ServiceID", ""))
+    await require_service_role(db, access, role, service)
+
+
+def _container_of(task: Mapping[str, Any]) -> tuple[str, str]:
     node_id = task.get("NodeID")
     container_id = (task.get("Status", {}).get("ContainerStatus") or {}).get("ContainerID")
     if not node_id or not container_id:
@@ -98,18 +120,27 @@ async def _task_container(reader: ClusterReader, task_id: str) -> tuple[str, str
 
 
 @router.get("/tasks/{task_id}")
-async def get_task(task_id: str, reader: Reader) -> views.Task:
+async def get_task(task_id: str, reader: Reader, access: CurrentAccess, db: DB) -> views.Task:
     task = await reader.task(task_id)
+    await _require_task_role(db, reader, access, Role.VIEWER, task)
     names = {n["ID"]: n.get("Description", {}).get("Hostname", "") for n in await reader.nodes()}
     return views.task(task, names)
 
 
 @router.get("/tasks/{task_id}/logs")
 async def task_logs(
-    task_id: str, reader: Reader, agents: AgentsDep, tail: Tail = 200, timestamps: bool = True
+    task_id: str,
+    reader: Reader,
+    agents: AgentsDep,
+    access: CurrentAccess,
+    db: DB,
+    tail: Tail = 200,
+    timestamps: bool = True,
 ) -> Any:
     _require_enabled(agents)
-    node_id, container_id = await _task_container(reader, task_id)
+    task = await reader.task(task_id)
+    await _require_task_role(db, reader, access, Role.VIEWER, task)
+    node_id, container_id = _container_of(task)
     return await agents.get(
         node_id, f"/containers/{container_id}/logs", {"tail": tail, "timestamps": timestamps}
     )
@@ -150,29 +181,69 @@ async def _bridge(browser: WebSocket, agent: ClientConnection) -> None:
 
 
 async def _proxy_task_socket(
-    websocket: WebSocket, task_id: str, agent_path: str, params: dict[str, Any], admin: bool
+    websocket: WebSocket,
+    task_id: str,
+    agent_path: str,
+    params: dict[str, Any],
+    role: Role,
+    audit_action: str | None = None,
 ) -> None:
-    async with websocket.app.state.sessionmaker() as db:
-        session: Session | None = await authenticate(websocket, db)
-        allowed = session is not None and (session.user.is_admin or not admin)
-    if not allowed:
-        await websocket.close(code=1008, reason="Not allowed.")
+    access = await websocket_access(websocket)
+    if access is None:
+        await websocket.close(code=1008, reason="Not logged in.")
         return
     agents = get_agents(websocket)
     if not agents.enabled:
         await websocket.close(code=1011, reason="No agents configured.")
         return
 
+    reader = get_reader(websocket)
+    maker = websocket.app.state.sessionmaker
+    try:
+        task = await reader.task(task_id)
+        async with maker() as db:
+            await _require_task_role(db, reader, access, role, task)
+        node_id, container_id = _container_of(task)
+    except Forbidden:
+        if audit_action:
+            async with maker() as db:
+                access.audit(
+                    db, audit_action, outcome=Outcome.DENIED, target=task_id, details=params
+                )
+                await db.commit()
+        await websocket.close(code=1008, reason="Not allowed.")
+        return
+    except NotFound as exc:
+        await websocket.accept()
+        await websocket.close(code=4404, reason=str(exc)[:120])
+        return
+    except DockerUnavailable:
+        await websocket.accept()
+        await websocket.close(code=1011, reason="Docker is unavailable.")
+        return
+
+    async def audit(outcome: Outcome, **extra: Any) -> None:
+        if audit_action:
+            async with maker() as db:
+                access.audit(
+                    db,
+                    audit_action,
+                    outcome=outcome,
+                    target=task_id,
+                    details={**params, "node": node_id, **extra},
+                )
+                await db.commit()
+
     await websocket.accept()
     try:
-        node_id, container_id = await _task_container(get_reader(websocket), task_id)
         path = agent_path.format(container=container_id) + "?" + urlencode(params)
         async with agents.websocket(node_id, path) as agent:
+            # Recorded on connect: the handler can be cancelled when the browser goes away.
+            await audit(Outcome.SUCCESS)
             await _bridge(websocket, agent)
-    except NotFound as exc:
-        await websocket.close(code=4404, reason=str(exc)[:120])
     except (AgentUnavailable, OSError, InvalidHandshake, InvalidStatus) as exc:
         log.warning("Agent connection for task %s failed: %s", task_id, exc)
+        await audit(Outcome.FAILED, error=str(exc)[:500])
         with contextlib.suppress(RuntimeError):
             await websocket.close(code=1011, reason=str(exc)[:120])
 
@@ -186,14 +257,19 @@ async def follow_task_logs(
         task_id,
         "/containers/{container}/logs/follow",
         {"tail": tail, "timestamps": str(timestamps).lower()},
-        admin=False,
+        Role.VIEWER,
     )
 
 
 @ws_router.websocket("/tasks/{task_id}/exec")
 async def exec_task(websocket: WebSocket, task_id: str, cmd: str = "/bin/sh") -> None:
     await _proxy_task_socket(
-        websocket, task_id, "/containers/{container}/exec", {"cmd": cmd}, admin=True
+        websocket,
+        task_id,
+        "/containers/{container}/exec",
+        {"cmd": cmd},
+        Role.OPERATOR,
+        audit_action="terminal.session",
     )
 
 

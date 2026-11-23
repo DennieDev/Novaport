@@ -1,33 +1,29 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import asyncio
 import json
-import uuid
 from collections.abc import AsyncIterator, Iterator
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from novaport.auth.passwords import hash_password
 from novaport.migrate import upgrade
-from novaport.models import User
+from novaport.models import AuditEntry, Role, RoleBinding, User
 from novaport.server.app import create_app
-from novaport.server.deps import current_user
-from tests.conftest import TEST_DATABASE_URL, client_for, make_settings
+from tests.conftest import TEST_DATABASE_URL, as_admin, client_for, make_settings
 from tests.fakes import FakeAgents, FakeReader
 
 PASSWORD = "correct horse battery"
 
 
 def _admin_app(agents: FakeAgents, reader: FakeReader) -> FastAPI:
-    app = create_app(make_settings(), reader=reader, agents=agents)
-    user = User(id=uuid.uuid4(), username="admin", is_admin=True, disabled=False)
-    app.dependency_overrides[current_user] = lambda: user
-    return app
+    return as_admin(create_app(make_settings(), reader=reader, agents=agents))
 
 
 @pytest.fixture
@@ -124,7 +120,7 @@ async def _truncate(url: str) -> None:
     engine = create_async_engine(url)
     try:
         async with engine.begin() as conn:
-            await conn.execute(text("TRUNCATE users, sessions CASCADE"))
+            await conn.execute(text("TRUNCATE users, sessions, audit_log CASCADE"))
     finally:
         await engine.dispose()
 
@@ -178,3 +174,61 @@ def test_exec_requires_login(ws_client: tuple[TestClient, FakeAgents]) -> None:
         ws.receive_text()
     assert exc.value.code == 1008
     assert agents.socket_paths == []
+
+
+async def _add_viewer(url: str) -> None:
+    engine = create_async_engine(url)
+    try:
+        async with async_sessionmaker(engine)() as db:
+            user = User(username="vera", password_hash=hash_password(PASSWORD))
+            db.add(user)
+            await db.flush()
+            db.add(RoleBinding(user_id=user.id, role=Role.VIEWER))
+            await db.commit()
+    finally:
+        await engine.dispose()
+
+
+async def _terminal_audit(url: str) -> list[tuple[str | None, str]]:
+    engine = create_async_engine(url)
+    try:
+        async with async_sessionmaker(engine)() as db:
+            entries = await db.scalars(
+                select(AuditEntry)
+                .where(AuditEntry.action == "terminal.session")
+                .order_by(AuditEntry.id)
+            )
+            return [(e.username, e.outcome) for e in entries]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.postgres
+def test_exec_needs_operator(ws_client: tuple[TestClient, FakeAgents]) -> None:
+    assert TEST_DATABASE_URL
+    client, agents = ws_client
+    asyncio.run(_add_viewer(TEST_DATABASE_URL))
+    response = client.post("/api/auth/login", json={"username": "vera", "password": PASSWORD})
+    assert response.status_code == 204
+
+    with client.websocket_connect("/api/tasks/task1/logs/follow") as ws:
+        assert ws.receive_text() == "hello\n"
+    with (
+        pytest.raises(WebSocketDisconnect) as exc,
+        client.websocket_connect("/api/tasks/task1/exec") as ws,
+    ):
+        ws.receive_text()
+    assert exc.value.code == 1008
+    assert len(agents.socket_paths) == 1
+    assert asyncio.run(_terminal_audit(TEST_DATABASE_URL)) == [("vera", "denied")]
+
+
+@pytest.mark.postgres
+def test_exec_is_audited(ws_client: tuple[TestClient, FakeAgents]) -> None:
+    assert TEST_DATABASE_URL
+    client, agents = ws_client
+    agents.socket.messages = ["bye"]
+    _login(client)
+    with client.websocket_connect("/api/tasks/task1/exec") as ws:
+        assert ws.receive_text() == "bye"
+    assert asyncio.run(_terminal_audit(TEST_DATABASE_URL)) == [("admin", "success")]

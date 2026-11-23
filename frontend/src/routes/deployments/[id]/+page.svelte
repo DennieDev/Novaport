@@ -6,6 +6,7 @@
 	import Status from '#lib/components/Status.svelte';
 	import { ago } from '#lib/format.ts';
 	import { poll } from '#lib/poll.svelte.ts';
+	import { can } from '#lib/session.svelte.ts';
 	import type { DeploymentDetail } from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
@@ -66,7 +67,7 @@
 		</dl>
 	</div>
 
-	{#if d.status === 'awaiting_approval' || d.status === 'pending'}
+	{#if (d.status === 'awaiting_approval' || d.status === 'pending') && can('operator', d.stack_id)}
 		<p class="actions">
 			{#if d.status === 'awaiting_approval'}
 				<button onclick={() => act('approve')} disabled={busy}>Approve and deploy</button>

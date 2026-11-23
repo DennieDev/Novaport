@@ -24,6 +24,8 @@ services:
     command: server
     environment:
       NOVAPORT_AGENT_DNS: tasks.agent
+      # External address, used for OIDC redirect URIs.
+      # NOVAPORT_PUBLIC_URL: https://novaport.example.com
     secrets:
       - novaport_database_url
       - novaport_agent_token

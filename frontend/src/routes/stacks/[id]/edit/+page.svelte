@@ -5,6 +5,7 @@
 	import { api, ApiError, errorMessage } from '#lib/api.ts';
 	import CodeEditor from '#lib/components/CodeEditor.svelte';
 	import MergeEditor from '#lib/components/MergeEditor.svelte';
+	import { can } from '#lib/session.svelte.ts';
 	import type {
 		ConflictBody,
 		FileConflict,
@@ -14,6 +15,7 @@
 	} from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
+	const editable = $derived(can('editor', id));
 
 	let stack = $state<Stack | undefined>();
 	let base = $state('');
@@ -183,8 +185,10 @@
 		<button onclick={() => saveResolved(false)} disabled={busy}>Commit anyway</button>
 	{/if}
 {:else if stack}
-	<h1>Edit {stack.name}</h1>
-	{#if stack.edit_mode === 'pr'}
+	<h1>{editable ? 'Edit' : 'Files of'} {stack.name}</h1>
+	{#if !editable}
+		<p class="muted">Read only: editing needs the editor role on this stack.</p>
+	{:else if stack.edit_mode === 'pr'}
 		<p class="muted">Changes go to a new branch with a pull request.</p>
 	{:else}
 		<p class="muted">Changes are committed to the branch and then follow the stack's deploy mode ({stack.deploy_mode}).</p>
@@ -198,7 +202,9 @@
 						<button class="link" onclick={() => (selected = path)} disabled={current[path] === null || binary.includes(path)}>
 							{path}{original[path] !== current[path] ? ' •' : ''}
 						</button>
-						{#if current[path] === null}
+						{#if !editable}
+							<!-- read only -->
+						{:else if current[path] === null}
 							<button class="link small" onclick={() => restoreFile(path)}>restore</button>
 						{:else}
 							<button class="link small" onclick={() => removeFile(path)}>delete</button>
@@ -206,13 +212,17 @@
 					</li>
 				{/each}
 			</ul>
-			<button onclick={addFile}>Add file</button>
+			{#if editable}<button onclick={addFile}>Add file</button>{/if}
 			<p><a href="/stacks/{id}/secrets">Secrets →</a></p>
 		</aside>
 		<section>
 			{#if selected && current[selected] !== null && current[selected] !== undefined}
 				<div class="editor-wrap">
-					<CodeEditor bind:value={current[selected] as string} path={selected} />
+					<CodeEditor
+						bind:value={current[selected] as string}
+						path={selected}
+						readOnly={!editable}
+					/>
 				</div>
 			{:else}
 				<p class="muted">Select a file.</p>
@@ -220,7 +230,7 @@
 		</section>
 	</div>
 
-	<div class="save">
+	<div class="save" hidden={!editable}>
 		<input bind:value={message} placeholder="Commit message (optional)" maxlength="5000" />
 		<button onclick={() => saveChanges()} disabled={busy || changed.length === 0}>
 			{busy ? 'Saving…' : `Save ${changed.length || ''} change${changed.length === 1 ? '' : 's'}`}

@@ -4,6 +4,7 @@ import atexit
 import os
 import shutil
 import tempfile
+import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -14,10 +15,13 @@ from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from novaport.auth.access import Access
 from novaport.config import Settings
 from novaport.crypto import generate_key
 from novaport.migrate import upgrade
+from novaport.models import Role, User
 from novaport.server.app import create_app
+from novaport.server.deps import current_access, current_user
 from tests.fakes import FakeReader
 
 TEST_DATABASE_URL = os.environ.get("NOVAPORT_TEST_DATABASE_URL")
@@ -55,6 +59,15 @@ def make_settings(**overrides: object) -> Settings:
     return Settings.model_validate(values)
 
 
+def as_admin(app: FastAPI) -> FastAPI:
+    """Skip login and the database lookup of roles: every request is a global admin."""
+    user = User(id=uuid.uuid4(), username="admin", disabled=False)
+    access = Access(user=user, global_role=Role.ADMIN)
+    app.dependency_overrides[current_user] = lambda: user
+    app.dependency_overrides[current_access] = lambda: access
+    return app
+
+
 async def client_for(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
@@ -85,7 +98,7 @@ async def clean_db() -> AsyncIterator[str]:
             await conn.execute(
                 text(
                     "TRUNCATE users, sessions, repositories, stacks, revisions, deployments,"
-                    " deployment_events CASCADE"
+                    " deployment_events, groups, oidc_providers, audit_log CASCADE"
                 )
             )
         yield TEST_DATABASE_URL

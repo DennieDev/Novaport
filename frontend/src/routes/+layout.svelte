@@ -3,21 +3,28 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import favicon from '#lib/assets/favicon.svg';
-	import { loadSession, logOut, session } from '#lib/session.svelte.ts';
+	import { can, loadSession, logOut, session } from '#lib/session.svelte.ts';
+	import type { Role } from '#lib/types.ts';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
 
-	const links = [
-		{ href: '/', label: 'Overview' },
-		{ href: '/stacks', label: 'Stacks' },
-		{ href: '/services', label: 'Services' },
-		{ href: '/nodes', label: 'Nodes' },
-		{ href: '/networks', label: 'Networks' },
-		{ href: '/secrets', label: 'Secrets' },
-		{ href: '/configs', label: 'Configs' },
-		{ href: '/repositories', label: 'Repositories' }
+	// `role: null` means any logged-in user; pages filter to the stacks they may see.
+	const links: { href: string; label: string; role: Role | null }[] = [
+		{ href: '/', label: 'Overview', role: null },
+		{ href: '/stacks', label: 'Stacks', role: null },
+		{ href: '/services', label: 'Services', role: null },
+		{ href: '/nodes', label: 'Nodes', role: 'viewer' },
+		{ href: '/networks', label: 'Networks', role: 'viewer' },
+		{ href: '/secrets', label: 'Secrets', role: 'viewer' },
+		{ href: '/configs', label: 'Configs', role: 'viewer' },
+		{ href: '/repositories', label: 'Repositories', role: 'admin' },
+		{ href: '/access', label: 'Access', role: 'admin' },
+		{ href: '/audit', label: 'Audit log', role: 'admin' }
 	];
+	const visibleLinks = $derived(
+		session.user ? links.filter((l) => l.role === null || can(l.role)) : []
+	);
 
 	const isLogin = $derived(page.url.pathname === '/login');
 
@@ -50,11 +57,13 @@
 	<div class="shell">
 		<nav>
 			<a class="brand" href="/">Novaport</a>
-			{#each links as link (link.href)}
+			{#each visibleLinks as link (link.href)}
 				<a href={link.href} class:active={active(link.href)}>{link.label}</a>
 			{/each}
 			<div class="spacer"></div>
-			<span class="muted">{session.user.username}</span>
+			<span class="muted" title={session.user.global_role ?? 'no global role'}>
+				{session.user.name ?? session.user.username}
+			</span>
 			<button class="link" onclick={signOut}>Log out</button>
 		</nav>
 		<main>
@@ -186,6 +195,14 @@
 			background: none;
 			color: var(--accent);
 			padding: 0;
+		}
+		select {
+			font: inherit;
+			padding: 0.35rem;
+			border: 1px solid var(--border);
+			background: var(--panel);
+			color: var(--fg);
+			border-radius: 5px;
 		}
 		input {
 			font: inherit;

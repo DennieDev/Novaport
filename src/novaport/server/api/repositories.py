@@ -12,12 +12,14 @@ from sqlalchemy import func, select
 
 from novaport.crypto import Cipher, MissingSecretKey, generate_ssh_keypair
 from novaport.forges import Forge
-from novaport.models import DeployMode, EditMode, GitAuth, Repository, Stack
-from novaport.server.deps import DB, get_settings, require_admin
+from novaport.models import DeployMode, EditMode, GitAuth, Outcome, Repository, Role, Stack
+from novaport.server.deps import DB, AdminAccess, get_settings, require_role
 from novaport.stacks.sync import Syncer, mirror_path
 
 router = APIRouter(
-    prefix="/api/repositories", tags=["repositories"], dependencies=[Depends(require_admin)]
+    prefix="/api/repositories",
+    tags=["repositories"],
+    dependencies=[Depends(require_role(Role.ADMIN))],
 )
 
 REMOTE_URL = re.compile(r"^(https?://|ssh://|git://)[^\s]+$|^[\w.-]+@[\w.-]+:[^\s]+$")
@@ -196,7 +198,7 @@ async def list_repositories(db: DB) -> list[RepositoryOut]:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_repository(
-    body: RepositoryIn, request: Request, db: DB, cipher: CipherDep
+    body: RepositoryIn, request: Request, db: DB, cipher: CipherDep, access: AdminAccess
 ) -> RepositoryOut:
     check_url(body.url, get_settings(request).allow_local_repositories)
     if await _name_taken(db, body.name):
@@ -217,6 +219,9 @@ async def create_repository(
     _apply_auth(repo, body.auth, body.token, cipher)
     _apply_forge_token(repo, body.forge_token, cipher)
     db.add(repo)
+    access.audit(
+        db, "repository.create", target=repo.name, details={"url": repo.url, "id": str(repo.id)}
+    )
     await db.commit()
     await db.refresh(repo)
     return to_out(repo, 0)
@@ -230,7 +235,12 @@ async def get_repository(repository_id: uuid.UUID, db: DB) -> RepositoryOut:
 
 @router.patch("/{repository_id}")
 async def update_repository(
-    repository_id: uuid.UUID, body: RepositoryPatch, request: Request, db: DB, cipher: CipherDep
+    repository_id: uuid.UUID,
+    body: RepositoryPatch,
+    request: Request,
+    db: DB,
+    cipher: CipherDep,
+    access: AdminAccess,
 ) -> RepositoryOut:
     repo = await _get(db, repository_id)
     if body.url is not None:
@@ -257,42 +267,61 @@ async def update_repository(
                 "A token is required for token authentication.",
             )
         _apply_auth(repo, auth, body.token, cipher)
+    changed = sorted(body.model_dump(exclude_unset=True).keys())
+    access.audit(db, "repository.update", target=repo.name, details={"fields": changed})
     await db.commit()
     return to_out(repo, (await _stack_counts(db)).get(repo.id, 0))
 
 
 @router.post("/{repository_id}/ssh-key")
-async def regenerate_ssh_key(repository_id: uuid.UUID, db: DB, cipher: CipherDep) -> RepositoryOut:
+async def regenerate_ssh_key(
+    repository_id: uuid.UUID, db: DB, cipher: CipherDep, access: AdminAccess
+) -> RepositoryOut:
     repo = await _get(db, repository_id)
     repo.ssh_private_key = None
     _apply_auth(repo, GitAuth.SSH, None, cipher)
+    access.audit(db, "repository.ssh_key", target=repo.name)
     await db.commit()
     return to_out(repo, (await _stack_counts(db)).get(repo.id, 0))
 
 
 @router.post("/{repository_id}/webhook-secret")
-async def regenerate_webhook_secret(repository_id: uuid.UUID, db: DB) -> RepositoryOut:
+async def regenerate_webhook_secret(
+    repository_id: uuid.UUID, db: DB, access: AdminAccess
+) -> RepositoryOut:
     repo = await _get(db, repository_id)
     repo.webhook_secret = secrets.token_hex(32)
+    access.audit(db, "repository.webhook_secret", target=repo.name)
     await db.commit()
     return to_out(repo, (await _stack_counts(db)).get(repo.id, 0))
 
 
 @router.delete("/{repository_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_repository(repository_id: uuid.UUID, request: Request, db: DB) -> None:
+async def delete_repository(
+    repository_id: uuid.UUID, request: Request, db: DB, access: AdminAccess
+) -> None:
     """Forget a repository and its stacks. Running services are left alone."""
     repo = await _get(db, repository_id)
     await db.delete(repo)
+    access.audit(db, "repository.delete", target=repo.name, details={"url": repo.url})
     await db.commit()
     shutil.rmtree(mirror_path(get_settings(request), repository_id), ignore_errors=True)
 
 
 @router.post("/{repository_id}/sync")
 async def sync_repository(
-    repository_id: uuid.UUID, request: Request, db: DB, syncer: SyncerDep
+    repository_id: uuid.UUID, request: Request, db: DB, syncer: SyncerDep, access: AdminAccess
 ) -> SyncOut:
-    await _get(db, repository_id)
+    repo = await _get(db, repository_id)
     result = await syncer.sync(repository_id)
+    access.audit(
+        db,
+        "repository.sync",
+        outcome=Outcome.FAILED if result.error else Outcome.SUCCESS,
+        target=repo.name,
+        details={"commit": result.commit, "error": result.error},
+    )
+    await db.commit()
     if result.queued_deployments and request.app.state.jobs is not None:
         request.app.state.jobs.wake()
     return SyncOut(

@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: LogLevel = "info"
     static_dir: Path | None = None
+    # External URL, such as https://novaport.example.com. Used for OIDC redirect URIs; without
+    # it they are built from the request.
+    public_url: str | None = None
     # Comma-separated IPs or CIDRs whose X-Forwarded-For/-Proto headers are trusted.
     trusted_proxies: str = "127.0.0.1"
 
