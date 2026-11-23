@@ -1,0 +1,29 @@
+# Local development database: docker compose -f compose.dev.yaml up -d
+name: novaport-dev
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: novaport
+      POSTGRES_PASSWORD: novaport
+      POSTGRES_DB: novaport
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres:/var/lib/postgresql
+    configs:
+      - source: test-database
+        target: /docker-entrypoint-initdb.d/test-database.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "novaport", "-d", "novaport"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+configs:
+  test-database:
+    content: CREATE DATABASE novaport_test;
+
+volumes:
+  postgres:
