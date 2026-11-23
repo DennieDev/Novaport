@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 from novaport.auth.access import record
 from novaport.docker.client import ClusterReader, DockerUnavailable, NotSwarmManager
 from novaport.docker.views import STACK_LABEL
+from novaport.edge.hub import EndpointOffline, Target
 from novaport.git import Identity
 from novaport.locks import LockTimeout, try_lock
 from novaport.models import EditMode, ImageCheck, Stack, StackType
@@ -93,7 +94,9 @@ class UpdateChecker:
         registry: RegistryClient,
         reader: Callable[[], ClusterReader | None],
         author: Identity,
+        targets: Callable[[uuid.UUID | None], Target] | None = None,
     ) -> None:
+        self.targets = targets
         self.engine = engine
         self.sessionmaker = sessionmaker
         self.editor = editor
@@ -103,7 +106,13 @@ class UpdateChecker:
         self.hooks: list[EventHook] = []
 
     async def _running_digests(self, stack: Stack) -> dict[str, str]:
-        reader = self.reader()
+        if self.targets is None:
+            reader = self.reader()
+        else:
+            try:
+                reader = self.targets(stack.endpoint_id).reader
+            except EndpointOffline:
+                return {}
         if reader is None or stack.type != StackType.SWARM:
             return {}
         try:

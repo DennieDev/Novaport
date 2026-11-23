@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import logging
+import tempfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import aiodocker
 import httpx
@@ -28,6 +30,7 @@ from novaport.docker.client import (
     NotFound,
     NotSwarmManager,
 )
+from novaport.edge.hub import EdgeHub, Target, Targets
 from novaport.git import Identity
 from novaport.jobs import Jobs
 from novaport.models import Outcome
@@ -47,6 +50,7 @@ from novaport.server.api import (
     stacks,
     webhooks,
 )
+from novaport.server.api import endpoints as endpoints_api
 from novaport.server.api import notifications as notifications_api
 from novaport.server.api import registries as registries_api
 from novaport.server.api import restart as restart_api
@@ -151,6 +155,12 @@ def create_app(
         http = httpx.AsyncClient(timeout=10, transport=http_transport)
         app.state.oidc = OidcClient(http)
 
+        edge = EdgeHub(
+            Path(tempfile.mkdtemp(prefix="novaport-edge-")),
+            settings.command_timeout.total_seconds(),
+        )
+        app.state.edge = edge
+
         cipher = Cipher(settings.secret_key.get_secret_value() if settings.secret_key else None)
         syncer = Syncer(settings, engine, maker, cipher)
         notifier = Notifier(settings, maker, cipher, http)
@@ -162,11 +172,17 @@ def create_app(
             async with maker() as db:
                 return await all_logins(db, cipher)
 
+        local_cli = cli or SubprocessDockerCli(
+            settings.docker_host, settings.command_timeout.total_seconds()
+        )
+        targets = Targets(
+            lambda: Target("local", local_cli, app.state.docker, app.state.agents), edge
+        )
+        app.state.targets = targets
         pipeline = Pipeline(
             settings,
             maker,
-            cli
-            or SubprocessDockerCli(settings.docker_host, settings.command_timeout.total_seconds()),
+            local_cli,
             reader=lambda: app.state.docker,
             mirror=lambda stack: mirror_for(settings, stack.repository),
             agents=lambda: app.state.agents,
@@ -175,6 +191,7 @@ def create_app(
             registry=lambda: registry,
             logins=logins,
             notify=notifier.emit,
+            targets=targets,
         )
         sops = Sops(
             settings.sops_binary,
@@ -193,6 +210,7 @@ def create_app(
             registry,
             reader=lambda: app.state.docker,
             author=Identity(settings.commit_name, settings.commit_email),
+            targets=targets,
         )
 
         async def announce_update(event: UpdateEvent) -> None:
@@ -206,6 +224,8 @@ def create_app(
             notifier,
             reader=lambda: app.state.docker,
             agents=lambda: app.state.agents,
+            targets=targets,
+            edge=edge,
         )
         app.state.jobs = (
             Jobs(
@@ -237,6 +257,7 @@ def create_app(
                 await pool.close()
             if docker is not None:
                 await docker.close()
+            await edge.close()
             await notifier.drain()
             await http.aclose()
             await engine.dispose()
@@ -270,6 +291,8 @@ def create_app(
     app.include_router(updates_api.router)
     app.include_router(notifications_api.router)
     app.include_router(restart_api.router)
+    app.include_router(endpoints_api.router)
+    app.include_router(endpoints_api.ws_router)
     app.include_router(agents_api.router)
     app.include_router(agents_api.ws_router)
 

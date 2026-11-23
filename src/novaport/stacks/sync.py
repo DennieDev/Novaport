@@ -12,10 +12,11 @@ from novaport.config import Settings
 from novaport.crypto import Cipher
 from novaport.git import Credentials, GitError, GitMirror
 from novaport.locks import lock, try_lock
-from novaport.models import GitAuth, Repository, Revision, Stack, StackType
+from novaport.models import Endpoint, GitAuth, Repository, Revision, Stack, StackType
 from novaport.stacks.deployments import deployment_for_new_revision
 from novaport.stacks.settings import (
     COMPOSE_FILES,
+    LOCAL_ENDPOINT,
     SETTINGS_FILE,
     InvalidSettings,
     parse_settings,
@@ -109,6 +110,7 @@ class Syncer:
             s.path: s for s in await db.scalars(select(Stack).where(Stack.repository_id == repo.id))
         }
         seen: set[str] = set()
+        endpoints = {e.name: e.id for e in await db.scalars(select(Endpoint))}
 
         for path in await mirror.list_dirs(commit, repo.stacks_root):
             files = await mirror.list_files(commit, path)
@@ -140,7 +142,15 @@ class Syncer:
             except InvalidSettings as exc:
                 stack.config_error = str(exc)
                 continue
+            endpoint_name = stack_settings.endpoint or LOCAL_ENDPOINT
+            if endpoint_name != LOCAL_ENDPOINT and endpoint_name not in endpoints:
+                stack.config_error = (
+                    f"{SETTINGS_FILE}: unknown endpoint {endpoint_name!r}. "
+                    "Add it under Endpoints first."
+                )
+                continue
             stack.config_error = None
+            stack.endpoint_id = endpoints.get(endpoint_name)
             stack.type = stack_settings.type or StackType.SWARM
             stack.deploy_mode = stack_settings.deploy or repo.default_deploy_mode
             stack.edit_mode = stack_settings.edits or repo.default_edit_mode

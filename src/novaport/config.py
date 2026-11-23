@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     # (`tasks.agent` inside the Novaport stack), or a fixed comma-separated list of URLs.
     agent_dns: str | None = None
     agent_urls: str | None = None
+    # Set on agents outside Novaport's own Swarm: the key from the endpoint's page in Novaport.
+    # The agent then connects out to the server instead of listening.
+    edge_key: SecretStr | None = None
     # Where the agent sees the host's root filesystem (mounted read-only).
     host_root: Path = Path("/host")
 

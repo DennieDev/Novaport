@@ -76,6 +76,8 @@ class StackOut(BaseModel):
     path: str
     repository: RepositoryRef
     type: StackType
+    # None for the Swarm or host Novaport runs on.
+    endpoint: str | None
     deploy_mode: DeployMode
     edit_mode: EditMode
     config_error: str | None
@@ -143,6 +145,7 @@ async def stack_out(db: DB, stack: Stack) -> StackOut:
         path=stack.path,
         repository=RepositoryRef(id=stack.repository.id, name=stack.repository.name),
         type=stack.type,
+        endpoint=stack.endpoint.name if stack.endpoint else None,
         deploy_mode=stack.deploy_mode,
         edit_mode=stack.edit_mode,
         config_error=stack.config_error,
@@ -157,7 +160,11 @@ async def stack_out(db: DB, stack: Stack) -> StackOut:
     )
 
 
-STACK_LOAD = (selectinload(Stack.repository), selectinload(Stack.last_good_revision))
+STACK_LOAD = (
+    selectinload(Stack.repository),
+    selectinload(Stack.last_good_revision),
+    selectinload(Stack.endpoint),
+)
 
 
 async def _get_stack(db: DB, stack_id: uuid.UUID) -> Stack:

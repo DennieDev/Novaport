@@ -432,16 +432,43 @@ Main tables (columns abbreviated):
 - `notification_channels`: name, kind, encrypted url and signing secret, recipients, last delivery
 - `notification_subscriptions`: channel, event (or `*`), stack id (NULL for all)
 - `audit_log`: id, at, user_id, username, action, target, stack_id, ip, outcome, details
+- `endpoints`: id, name, secret hash, connected and disconnected times, hostname, Docker and agent
+  versions, whether it is a Swarm manager
 - `settings`
 
 Deployment status values: `pending`, `awaiting_approval`, `running`, `succeeded`, `failed`,
 `cancelled`.
 
-## Standalone Docker hosts
+## Endpoints
 
-Standalone hosts run Compose stacks only. The server reaches them through an agent running on the
-host, connected outbound to the server so the host needs no open ports. This arrives after Swarm
-support is solid.
+The Swarm or host Novaport runs on is the endpoint `local`. Other Docker hosts and Swarm clusters
+are endpoints too, each with an agent that connects out to the server, so they need no open ports
+and can sit behind NAT. One Novaport manages any number of them.
+
+- An admin adds an endpoint under Endpoints and gets an edge key: the server URL, the endpoint
+  ID, and a secret, in one string. The server stores only a hash of the secret. A new key
+  disconnects the agent using the old one.
+- The agent runs with `NOVAPORT_EDGE_KEY` set (`docker run` on a single host, a service on a
+  manager for a Swarm cluster). It opens a WebSocket to `/api/edge/connect` and reconnects with
+  backoff when the connection drops. Use an `https://` server URL; the agent verifies the
+  certificate.
+- Over that WebSocket the server opens byte streams to the agent: to the host's Docker socket and
+  to the agent's own API. On the server, each connected endpoint gets a local Docker socket and
+  agent socket that turn every connection into such a stream. The deploy pipeline, `docker
+  compose`, `docker stack deploy`, drift checks, and restarts run against the endpoint's socket
+  exactly as they do locally.
+- A stack picks its endpoint with `endpoint: <name>` in `novaport.yaml`. Unknown names are shown
+  as a configuration error on the stack. Moving a stack to another endpoint does not remove it
+  from the old one.
+- Endpoints that stacks still use can't be deleted. A disconnected endpoint fails deploys at the
+  resolve stage and raises an `endpoint.disconnected` notification.
+
+The edge agent has Docker socket access, which is root on that host, and the server can use all
+of it. The key is what protects that: treat it like a root password for the host.
+
+Not yet done: browsing nodes, services, logs, and terminals of remote endpoints (the pages show
+`local` only), and per-node agents on remote Swarm clusters. Bind mount checks on a remote Swarm
+cover the manager the agent runs on.
 
 ## Security notes
 
@@ -475,10 +502,8 @@ support is solid.
 5. **Access.** OIDC, roles and bindings, audit log.
 6. **Updates and notifications.** Registries, update policies, update commits and PRs, notification
    channels, drift detection.
-7. **Standalone hosts.** Compose stacks on non-Swarm hosts through an outbound agent.
+7. **Endpoints.** Standalone hosts and other Swarm clusters through outbound edge agents.
 
 ## Open questions
 
-- Multiple Swarm clusters from one server: through outbound agents, the same way as standalone
-  hosts, or one Novaport per cluster?
 - Does Novaport need to read stacks that were deployed outside it, to help with migration?

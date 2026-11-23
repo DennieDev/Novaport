@@ -30,6 +30,7 @@ from novaport.deploy.drift import snapshot
 from novaport.deploy.preflight import preflight
 from novaport.docker.client import ClusterReader
 from novaport.docker.views import STACK_LABEL
+from novaport.edge.hub import EndpointOffline, Target
 from novaport.git import GitError, GitMirror
 from novaport.models import (
     Deployment,
@@ -72,7 +73,9 @@ class Pipeline:
         registry: Callable[[], RegistryClient | None] = lambda: None,
         logins: Callable[[], Awaitable[dict[str, Login]]] | None = None,
         notify: Callable[[Event], None] | None = None,
+        targets: Callable[[uuid.UUID | None], Target] | None = None,
     ) -> None:
+        self.targets = targets
         self.notify = notify
         self.registry = registry
         self.logins = logins
@@ -90,7 +93,10 @@ class Pipeline:
             deployment = await db.get(
                 Deployment,
                 deployment_id,
-                options=[selectinload(Deployment.stack).selectinload(Stack.repository)],
+                options=[
+                    selectinload(Deployment.stack).selectinload(Stack.repository),
+                    selectinload(Deployment.stack).selectinload(Stack.endpoint),
+                ],
             )
             if deployment is None or deployment.status != DeploymentStatus.PENDING:
                 return deployment.status if deployment else DeploymentStatus.CANCELLED
@@ -175,10 +181,23 @@ class Pipeline:
         if output:
             await self._event(db, deployment, stage, "info", output)
 
+    def _target(self, stack: Stack) -> Target:
+        if self.targets is None:
+            return Target("local", self.cli, self.reader(), self.agents())
+        try:
+            return self.targets(stack.endpoint_id)
+        except EndpointOffline as exc:
+            raise DeployFailed("resolve", str(exc)) from exc
+
     async def _deploy(self, db: AsyncSession, deployment: Deployment) -> None:
         stack = deployment.stack
         revision = deployment.revision
         timeout = int(self.settings.deploy_timeout.total_seconds())
+        target = self._target(stack)
+        if stack.endpoint is not None:
+            await self._event(
+                db, deployment, "resolve", "info", f"Deploying to endpoint {stack.endpoint.name}"
+            )
 
         with tempfile.TemporaryDirectory(prefix="novaport-deploy-") as tmp:
             await self._event(
@@ -224,7 +243,7 @@ class Pipeline:
 
             await self._event(db, deployment, "validate", "info", f"Validating {compose_file}")
             try:
-                config = await self.cli.config(stack.type, stack.name, folder, compose_file, env)
+                config = await target.cli.config(stack.type, stack.name, folder, compose_file, env)
             except CommandTimeout as exc:
                 raise DeployFailed("validate", str(exc)) from exc
             if not config.ok:
@@ -244,14 +263,14 @@ class Pipeline:
                 raise DeployFailed("validate", str(exc)) from exc
             (folder / RENDERED_FILE).write_text(rendered)
 
-            await self._preflight(db, deployment, config.stdout)
+            await self._preflight(db, deployment, config.stdout, target)
 
             await self._event(db, deployment, "apply", "info", f"Deploying stack {stack.name}")
             started = datetime.now(UTC)
             logins = await self.logins() if self.logins else {}
             try:
                 with docker_config(logins) as auth_env:
-                    result = await self.cli.apply(
+                    result = await target.cli.apply(
                         stack.type,
                         stack.name,
                         folder,
@@ -264,15 +283,14 @@ class Pipeline:
             await self._command(db, deployment, "apply", result)
 
         if stack.type == StackType.SWARM:
-            await self._converge(db, deployment, started, timeout)
-            await self._remove_old_secrets(db, deployment, set(secret_names.values()))
-            await self._snapshot(stack)
+            await self._converge(db, deployment, started, timeout, target.reader)
+            await self._remove_old_secrets(db, deployment, set(secret_names.values()), target)
+            await self._snapshot(stack, target.reader)
         else:
             await self._event(db, deployment, "converge", "info", "All containers are up.")
 
-    async def _snapshot(self, stack: Stack) -> None:
+    async def _snapshot(self, stack: Stack, reader: ClusterReader | None) -> None:
         """Remember the services as deployed, as the baseline for drift detection."""
-        reader = self.reader()
         if reader is None:
             return
         services = await reader.services(label=f"{STACK_LABEL}={stack.name}")
@@ -297,10 +315,10 @@ class Pipeline:
         return values
 
     async def _remove_old_secrets(
-        self, db: AsyncSession, deployment: Deployment, current: set[str]
+        self, db: AsyncSession, deployment: Deployment, current: set[str], target: Target
     ) -> None:
         """Remove secrets earlier deploys of this stack created and no service uses any more."""
-        reader = self.reader()
+        reader = target.reader
         if reader is None:
             return
         stack = deployment.stack.name
@@ -315,15 +333,17 @@ class Pipeline:
         ]
         if not stale:
             return
-        result = await self.cli.remove_secrets(stale)
+        result = await target.cli.remove_secrets(stale)
         removed = [n for n in stale if n not in result.stderr]
         if removed:
             await self._event(
                 db, deployment, "converge", "info", f"Removed old secrets: {', '.join(removed)}"
             )
 
-    async def _preflight(self, db: AsyncSession, deployment: Deployment, normalized: str) -> None:
-        reader = self.reader()
+    async def _preflight(
+        self, db: AsyncSession, deployment: Deployment, normalized: str, target: Target
+    ) -> None:
+        reader = target.reader
         if reader is None:
             await self._event(
                 db, deployment, "preflight", "warning", "Skipped: no Docker connection."
@@ -338,7 +358,7 @@ class Pipeline:
             stack.type,
             stack.name,
             reader,
-            self.agents(),
+            target.agents,
             self.registry(),
         )
         for note in report.notes:
@@ -349,9 +369,13 @@ class Pipeline:
             raise DeployFailed("preflight", "\n".join(report.errors))
 
     async def _converge(
-        self, db: AsyncSession, deployment: Deployment, started: datetime, timeout: int
+        self,
+        db: AsyncSession,
+        deployment: Deployment,
+        started: datetime,
+        timeout: int,
+        reader: ClusterReader | None,
     ) -> None:
-        reader = self.reader()
         if reader is None:
             raise DeployFailed("converge", "No Docker connection to watch the rollout.")
 

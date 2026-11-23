@@ -7,6 +7,7 @@ from sqlalchemy import select
 from novaport.auth.access import Access
 from novaport.deploy.cli import DockerCli
 from novaport.docker.views import STACK_LABEL
+from novaport.edge.hub import EndpointOffline, Target
 from novaport.locks import try_lock
 from novaport.models import Outcome, Role, Stack, StackType
 from novaport.process import CommandTimeout, Result
@@ -71,14 +72,20 @@ async def restart_service(
 
 @router.post("/stacks/{stack_id}/restart", status_code=status.HTTP_204_NO_CONTENT)
 async def restart_stack(
-    stack_id: uuid.UUID, request: Request, reader: Reader, db: DB, access: CurrentAccess
+    stack_id: uuid.UUID, request: Request, db: DB, access: CurrentAccess
 ) -> None:
     """Restart every service of a Swarm stack, or every container of a Compose project."""
     access.require(Role.OPERATOR, stack_id, action="stack.restart")
     stack = await db.get(Stack, stack_id)
     if stack is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Stack not found.")
-    cli = _cli(request)
+    try:
+        target: Target = request.app.state.targets(stack.endpoint_id)
+    except EndpointOffline as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    reader, cli = target.reader, target.cli
+    if reader is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No Docker connection configured.")
     async with try_lock(request.app.state.engine, f"deploy:{stack.id}") as acquired:
         if not acquired:
             raise HTTPException(

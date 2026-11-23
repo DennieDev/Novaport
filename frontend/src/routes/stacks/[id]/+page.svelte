@@ -97,6 +97,10 @@
 			<dd><a href="/repositories/{s.repository.id}">{s.repository.name}</a> · <code>{s.path}</code></dd>
 			<dt>Type</dt>
 			<dd>{s.type === 'swarm' ? 'Swarm stack' : 'Compose project'}</dd>
+			<dt>Endpoint</dt>
+			<dd>
+				{#if s.endpoint}<a href="/endpoints">{s.endpoint}</a>{:else}local{/if}
+			</dd>
 			<dt>Deploy mode</dt>
 			<dd>{s.deploy_mode}</dd>
 			<dt>Edits</dt>

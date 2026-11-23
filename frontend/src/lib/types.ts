@@ -294,6 +294,7 @@ export interface Stack {
 	path: string;
 	repository: { id: string; name: string };
 	type: 'swarm' | 'compose';
+	endpoint: string | null;
 	deploy_mode: DeployMode;
 	edit_mode: 'commit' | 'pr';
 	config_error: string | null;
@@ -436,4 +437,24 @@ export interface NotificationChannel {
 	subscriptions: NotificationSubscription[];
 	last_sent_at: string | null;
 	last_error: string | null;
+}
+
+export interface Endpoint {
+	id: string;
+	name: string;
+	connected: boolean;
+	hostname: string | null;
+	docker_version: string | null;
+	agent_version: string | null;
+	swarm: boolean;
+	connected_at: string | null;
+	disconnected_at: string | null;
+	stacks: string[];
+}
+
+export interface EndpointKey {
+	endpoint: Endpoint;
+	key: string;
+	docker_command: string;
+	swarm_command: string;
 }

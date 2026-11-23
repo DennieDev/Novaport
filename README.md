@@ -20,6 +20,29 @@ server (shared token, encrypted overlay network) and gives Novaport what a manag
 its own: container logs and terminals on every node, bind mount checks before a deploy, and
 per-node disk, image, and volume details.
 
+## Other hosts and clusters
+
+Novaport deploys to the Swarm it runs on, and to any other Docker host or Swarm cluster with an
+agent that connects back to it. Add an endpoint under Endpoints; Novaport shows a key and the
+command that starts the agent:
+
+```sh
+docker run -d --name novaport-agent --restart always \
+  -v /var/run/docker.sock:/var/run/docker.sock -v /:/host:ro \
+  -e NOVAPORT_EDGE_KEY=... ghcr.io/denniedev/novaport:latest agent
+```
+
+The host needs no open ports, only a way to reach Novaport. Point a stack at the endpoint in its
+`novaport.yaml`:
+
+```yaml
+endpoint: edge-01
+type: compose
+```
+
+The key gives full Docker access to that host, so keep it secret. Set `NOVAPORT_PUBLIC_URL` when
+Novaport is behind a proxy, so the key carries the external address.
+
 ## Secrets
 
 Novaport reads SOPS-encrypted `secrets.env` files with an age key. Generate one with
@@ -59,8 +82,8 @@ them to check images before a deploy and passes them to Swarm.
 
 ## Notifications and drift
 
-Under Notifications, send deploy results, approval requests, image updates, drift, and node or
-agent outages to a webhook, Slack, or email. Email needs an SMTP server:
+Under Notifications, send deploy results, approval requests, image updates, drift, and node,
+agent, or endpoint outages to a webhook, Slack, or email. Email needs an SMTP server:
 
 ```sh
 NOVAPORT_SMTP_HOST=smtp.example.com

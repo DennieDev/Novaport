@@ -2,6 +2,7 @@
 """Periodic checks that raise notifications: drift, approvals waiting, nodes and agents."""
 
 import logging
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -13,8 +14,16 @@ from novaport.agents.pool import Agents
 from novaport.deploy.drift import compare
 from novaport.docker.client import ClusterReader, DockerUnavailable, NotSwarmManager
 from novaport.docker.views import STACK_LABEL
+from novaport.edge.hub import EdgeHub, EndpointOffline, Target
 from novaport.locks import try_lock
-from novaport.models import Deployment, DeploymentStatus, EventType, Stack, StackType
+from novaport.models import (
+    Deployment,
+    DeploymentStatus,
+    Endpoint,
+    EventType,
+    Stack,
+    StackType,
+)
 from novaport.notifications import Event, Notifier
 from novaport.updates.checker import UpdateEvent
 
@@ -60,7 +69,11 @@ class Monitor:
         notifier: Notifier,
         reader: Callable[[], ClusterReader | None],
         agents: Callable[[], Agents | None],
+        targets: Callable[[uuid.UUID | None], Target] | None = None,
+        edge: EdgeHub | None = None,
     ) -> None:
+        self.targets = targets
+        self.edge = edge
         self.engine = engine
         self.sessionmaker = sessionmaker
         self.notifier = notifier
@@ -69,11 +82,17 @@ class Monitor:
         # Nodes and agents already reported as down, so each outage is announced once.
         self._down_nodes: set[str] | None = None
         self._down_agents: set[str] | None = None
+        self._down_endpoints: set[str] | None = None
+
+    def _reader_for(self, stack: Stack) -> ClusterReader | None:
+        if self.targets is None:
+            return self.reader()
+        try:
+            return self.targets(stack.endpoint_id).reader
+        except EndpointOffline:
+            return None
 
     async def check_drift(self) -> None:
-        reader = self.reader()
-        if reader is None:
-            return
         async with try_lock(self.engine, "drift") as acquired:
             if not acquired:
                 return
@@ -86,11 +105,14 @@ class Monitor:
                     )
                 )
                 for stack in stacks:
+                    reader = self._reader_for(stack)
+                    if reader is None:
+                        continue
                     try:
                         services = await reader.services(label=f"{STACK_LABEL}={stack.name}")
                     except (DockerUnavailable, NotSwarmManager) as exc:
-                        log.warning("Drift check skipped: %s", exc)
-                        return
+                        log.warning("Drift check of %s skipped: %s", stack.name, exc)
+                        continue
                     drift = compare(stack.deployed_spec or {}, services, stack.name)
                     if drift and drift != (stack.drift or []):
                         self.notifier.emit(
@@ -160,6 +182,19 @@ class Monitor:
                 EventType.AGENT_UNREACHABLE,
                 "Agent on {} is unreachable",
             )
+        await self._check_endpoints()
+
+    async def _check_endpoints(self) -> None:
+        if self.edge is None:
+            return
+        async with self.sessionmaker() as db:
+            rows = await db.execute(
+                select(Endpoint.id, Endpoint.name).where(Endpoint.connected_at.is_not(None))
+            )
+            down = {name for endpoint_id, name in rows if self.edge.get(endpoint_id) is None}
+        self._down_endpoints = self._report(
+            self._down_endpoints, down, EventType.ENDPOINT_DOWN, "Endpoint {} is disconnected"
+        )
 
     def _report(
         self, known: set[str] | None, current: set[str], kind: EventType, title: str

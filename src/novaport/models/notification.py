@@ -25,6 +25,7 @@ class EventType(StrEnum):
     UPDATE_PR = "update.pr_opened"
     NODE_DOWN = "node.down"
     AGENT_UNREACHABLE = "agent.unreachable"
+    ENDPOINT_DOWN = "endpoint.disconnected"
 
 
 class NotificationChannel(Base):

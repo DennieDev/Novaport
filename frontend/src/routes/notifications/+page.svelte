@@ -19,7 +19,8 @@
 		{ value: 'update.committed', label: 'Image update committed' },
 		{ value: 'update.pr_opened', label: 'Image update PR opened' },
 		{ value: 'node.down', label: 'Node down' },
-		{ value: 'agent.unreachable', label: 'Agent unreachable' }
+		{ value: 'agent.unreachable', label: 'Agent unreachable' },
+		{ value: 'endpoint.disconnected', label: 'Endpoint disconnected' }
 	];
 	const labels = Object.fromEntries(events.map((e) => [e.value, e.label]));
 

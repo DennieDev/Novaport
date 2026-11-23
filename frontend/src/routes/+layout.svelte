@@ -18,6 +18,7 @@
 		{ href: '/networks', label: 'Networks', role: 'viewer' },
 		{ href: '/secrets', label: 'Secrets', role: 'viewer' },
 		{ href: '/configs', label: 'Configs', role: 'viewer' },
+		{ href: '/endpoints', label: 'Endpoints', role: 'viewer' },
 		{ href: '/repositories', label: 'Repositories', role: 'admin' },
 		{ href: '/registries', label: 'Registries', role: 'admin' },
 		{ href: '/notifications', label: 'Notifications', role: 'admin' },

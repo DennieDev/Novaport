@@ -46,6 +46,24 @@ class DeploymentStatus(StrEnum):
         return self in (self.SUCCEEDED, self.FAILED, self.CANCELLED)
 
 
+class Endpoint(Base):
+    """A Docker host or Swarm cluster outside Novaport's own, reached through an edge agent."""
+
+    __tablename__ = "endpoints"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(63), unique=True)
+    # SHA-256 of the secret in the edge key.
+    secret_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    disconnected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    hostname: Mapped[str | None] = mapped_column(String(255))
+    docker_version: Mapped[str | None] = mapped_column(String(50))
+    agent_version: Mapped[str | None] = mapped_column(String(50))
+    swarm: Mapped[bool] = mapped_column(default=False)
+
+
 class Repository(Base):
     __tablename__ = "repositories"
 
@@ -88,6 +106,10 @@ class Stack(Base):
     path: Mapped[str] = mapped_column(String(500))
     name: Mapped[str] = mapped_column(String(63))
     type: Mapped[StackType] = mapped_column(String(10), default=StackType.SWARM)
+    # NULL is the Swarm or host Novaport itself runs on.
+    endpoint_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("endpoints.id", ondelete="RESTRICT"), index=True
+    )
     deploy_mode: Mapped[DeployMode] = mapped_column(String(10), default=DeployMode.MANUAL)
     edit_mode: Mapped[EditMode] = mapped_column(
         String(10), default=EditMode.COMMIT, server_default=EditMode.COMMIT
@@ -105,6 +127,7 @@ class Stack(Base):
     )
 
     repository: Mapped[Repository] = relationship(back_populates="stacks")
+    endpoint: Mapped[Endpoint | None] = relationship()
     revisions: Mapped[list["Revision"]] = relationship(
         back_populates="stack",
         foreign_keys="Revision.stack_id",

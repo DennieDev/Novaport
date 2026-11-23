@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import argparse
 import asyncio
+import contextlib
 import getpass
+import logging
 import sys
 from collections.abc import Sequence
 
@@ -14,6 +16,7 @@ from novaport.auth.users import UserExists, create_admin
 from novaport.config import get_settings
 from novaport.crypto import generate_key
 from novaport.db import create_engine
+from novaport.edge.agent import run_edge_agent
 from novaport.migrate import upgrade, wait_for_database
 from novaport.sops import age_recipient, generate_age_key
 
@@ -38,6 +41,11 @@ def _server(args: argparse.Namespace) -> int:
 
 def _agent(args: argparse.Namespace) -> int:
     settings = get_settings()
+    if settings.edge_key is not None:
+        logging.basicConfig(level=settings.log_level.upper(), format="%(levelname)s: %(message)s")
+        with contextlib.suppress(KeyboardInterrupt):
+            asyncio.run(run_edge_agent(settings))
+        return 0
     uvicorn.run(
         "novaport.agent.app:create_app",
         factory=True,

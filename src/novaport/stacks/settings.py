@@ -4,14 +4,16 @@
 import re
 
 import yaml
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from novaport.models import DeployMode, EditMode, StackType
 
 SETTINGS_FILE = "novaport.yaml"
+# The endpoint name for the Swarm or host Novaport runs on.
+LOCAL_ENDPOINT = "local"
 COMPOSE_FILES = ("compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml")
 
-# Swarm stack and Compose project names: lowercase, digits, dash, underscore.
+# Swarm stack, Compose project, and endpoint names: lowercase, digits, dash, underscore.
 NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
 
 
@@ -19,6 +21,7 @@ class StackSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: StackType | None = None
+    endpoint: str | None = Field(default=None, pattern=NAME_PATTERN.pattern)
     deploy: DeployMode | None = None
     edits: EditMode | None = None
 
