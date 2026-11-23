@@ -11,6 +11,10 @@ from novaport.agents.pool import AgentError, Agents, AgentUnavailable
 from novaport.deploy.constraints import InvalidConstraint, eligible_nodes
 from novaport.docker.client import ClusterReader
 from novaport.models import StackType
+from novaport.registries.client import RegistryClient, RegistryError
+from novaport.registries.reference import InvalidReference, parse_reference
+
+IMAGE_CHECKS_AT_ONCE = 5
 
 
 @dataclass
@@ -93,15 +97,51 @@ async def _check_mounts(
         )
 
 
+async def _check_images(
+    services: Mapping[str, Any], stack_type: StackType, registry: RegistryClient, report: Report
+) -> None:
+    images: dict[str, list[str]] = defaultdict(list)
+    for name, service in services.items():
+        if isinstance(service, dict) and isinstance(service.get("image"), str):
+            images[service["image"]].append(str(name))
+    limit = asyncio.Semaphore(IMAGE_CHECKS_AT_ONCE)
+
+    async def check(image: str, users: list[str]) -> None:
+        try:
+            ref = parse_reference(image)
+        except InvalidReference as exc:
+            report.errors.append(f"{', '.join(users)}: {exc}")
+            return
+        async with limit:
+            try:
+                found = await registry.digest(ref, ref.digest or ref.tag)
+            except RegistryError as exc:
+                report.warnings.append(f"Could not check image {image}: {exc}")
+                return
+        if found is not None:
+            return
+        message = f"{', '.join(users)}: image {image} does not exist in {ref.registry}."
+        # Compose can run images that only exist locally; Swarm nodes must pull them.
+        if stack_type == StackType.SWARM:
+            report.errors.append(message)
+        else:
+            report.warnings.append(message + " Fine if it was built on this host.")
+
+    await asyncio.gather(*(check(image, users) for image, users in images.items()))
+
+
 async def preflight(
     config: Mapping[str, Any],
     stack_type: StackType,
     stack: str,
     reader: ClusterReader,
     agents: Agents | None,
+    registry: RegistryClient | None = None,
 ) -> Report:
     report = Report()
     await _check_externals(config, stack_type, reader, report)
+    if registry is not None:
+        await _check_images(config.get("services") or {}, stack_type, registry, report)
 
     services: Mapping[str, Any] = config.get("services") or {}
     mounts = {name: bind_sources(svc) for name, svc in services.items()}

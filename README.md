@@ -39,6 +39,24 @@ Reference a value from a compose file with `secrets: name: environment: KEY`. No
 into a Swarm secret whose name includes a hash of the value, so rotating a secret is a normal
 rolling update.
 
+## Image updates
+
+Add an `x-updates` block to a service to have Novaport look for newer images:
+
+```yaml
+services:
+  api:
+    image: ghcr.io/acme/api:2.4.1
+    x-updates:
+      mode: version   # or digest, to follow a moving tag
+      allow: minor    # patch, minor, or major
+      action: pr      # commit, pr, notify, or none
+```
+
+Updates are commits or pull requests like any other change, so the stack's deploy mode decides
+what happens next. Credentials for private registries go under Registries; Novaport also uses
+them to check images before a deploy and passes them to Swarm.
+
 ## Login and roles
 
 The first admin logs in with a password. Add an OpenID Connect provider under Access → Login

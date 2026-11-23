@@ -98,7 +98,7 @@ async def clean_db() -> AsyncIterator[str]:
             await conn.execute(
                 text(
                     "TRUNCATE users, sessions, repositories, stacks, revisions, deployments,"
-                    " deployment_events, groups, oidc_providers, audit_log CASCADE"
+                    " deployment_events, groups, oidc_providers, audit_log, registries CASCADE"
                 )
             )
         yield TEST_DATABASE_URL

@@ -288,11 +288,28 @@ services:
   - `notify`: only send a notification.
   - `none`: record it in the UI only.
 
+- In `digest` mode the "current" digest is the one pinned in the compose file
+  (`image: nginx:1.27@sha256:...`), otherwise the digest the running Swarm service uses. The
+  update pins the new digest. In `version` mode a pinned digest stays pinned, to the new tag's
+  digest.
+- `x-updates: none` (or `mode: none`) turns checks off for a service.
+
 Updates that change git follow the normal path: new commit, new revision, then the stack's deploy
 mode decides. There is no separate update path that could drift from git.
 
-Checks run on a schedule using the registry v2 API with the configured credentials. Results are
-cached to stay within registry rate limits.
+- `commit` updates of one stack found in the same check go into one commit, authored by the
+  Novaport service identity. `pr` updates get one pull request per service, on a branch named
+  `novaport/update-<stack>-<service>-<tag>`.
+- Only the `image:` value is replaced, using the YAML parser's positions, so comments and
+  formatting stay as they are.
+- Each service's last result is stored with the candidate it acted on, so the same update is not
+  committed, proposed, or announced twice. A failed action (no forge token, the stack changed in
+  git meanwhile) is retried on the next check.
+
+Checks run on a schedule (`NOVAPORT_UPDATE_INTERVAL`, six hours by default) and on demand from the
+stack page, using the registry v2 API with the configured credentials. Manifest lookups use `HEAD`
+requests, which Docker Hub doesn't count against its pull limit, and tag lists and digests are
+cached for 15 minutes.
 
 ## Authentication and authorization
 
@@ -336,8 +353,14 @@ append-only in the application.
 
 ## Registries
 
-Registry credentials are stored encrypted in the database. They are used for pre-flight image
-checks, update checks, and passed to Swarm through `--with-registry-auth`.
+Registry credentials are stored encrypted in the database, one login per registry host
+(`docker.io` for Docker Hub). They are used for pre-flight image checks and update checks, and are
+written to a temporary docker client config for each deploy, which `docker stack deploy
+--with-registry-auth` passes to the nodes.
+
+The pre-flight check resolves every image's tag or digest. A missing image fails a Swarm deploy;
+for Compose projects it is only a warning, since the image may have been built on the host. An
+unreachable registry is a warning either way.
 
 ## Notifications
 
@@ -369,8 +392,9 @@ Main tables (columns abbreviated):
   update)
 - `deployments`: id, stack_id, revision_id, status, stage, started_at, finished_at, triggered_by
 - `deployment_events`: id, deployment_id, stage, level, message, data
-- `image_checks`: id, stack_id, service, current_ref, candidate_ref, checked_at, action_taken
-- `registries`: id, host, username, encrypted secret
+- `image_checks`: id, stack_id, service, current_ref, candidate_ref, status, policy, error,
+  checked_at, action_taken, acted_on_ref, action_ref
+- `registries`: id, host, username, encrypted password
 - `notification_channels`, `notification_subscriptions`
 - `audit_log`: id, at, user_id, username, action, target, stack_id, ip, outcome, details
 - `settings`

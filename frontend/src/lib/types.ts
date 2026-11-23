@@ -395,3 +395,24 @@ export interface SopsInfo {
 	recipient: string | null;
 	example: string | null;
 }
+
+export interface RegistryCredential {
+	id: string;
+	host: string;
+	username: string;
+	created_at: string;
+}
+
+export interface ImageCheck {
+	stack_id: string;
+	stack_name: string;
+	service: string;
+	current_ref: string | null;
+	candidate_ref: string | null;
+	status: 'current' | 'available' | 'error' | 'disabled';
+	policy: { mode?: string; allow?: string; match?: string | null; action?: string };
+	error: string | null;
+	checked_at: string;
+	action_taken: 'committed' | 'pr_opened' | 'notified' | 'recorded' | 'failed' | null;
+	action_ref: string | null;
+}

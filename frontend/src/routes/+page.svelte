@@ -2,11 +2,19 @@
 <script lang="ts">
 	import Badge from '#lib/components/Badge.svelte';
 	import DeploymentRow from '#lib/components/DeploymentRow.svelte';
+	import ImageUpdates from '#lib/components/ImageUpdates.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago, bytes, degraded, replicas } from '#lib/format.ts';
 	import { poll } from '#lib/poll.svelte.ts';
 	import { can } from '#lib/session.svelte.ts';
-	import type { Deployment, Node, ServiceSummary, SystemInfo, Task } from '#lib/types.ts';
+	import type {
+		Deployment,
+		ImageCheck,
+		Node,
+		ServiceSummary,
+		SystemInfo,
+		Task
+	} from '#lib/types.ts';
 
 	// Cluster-wide views need a global role; with only stack roles, show stacks and deployments.
 	const cluster = can('viewer');
@@ -19,6 +27,11 @@
 	const deployments = poll<Deployment[]>(() => '/deployments?limit=10', 5000);
 	const waiting = $derived(
 		(deployments.data ?? []).filter((d) => d.status === 'awaiting_approval')
+	);
+
+	const updates = poll<ImageCheck[]>(() => '/updates', 60_000);
+	const pendingUpdates = $derived(
+		(updates.data ?? []).filter((c) => c.status === 'available' && c.action_taken !== 'committed')
 	);
 
 	const troubled = $derived((services.data ?? []).filter(degraded));
@@ -72,6 +85,11 @@
 			{#each waiting as d (d.id)}<DeploymentRow {d} showStack />{/each}
 		</tbody>
 	</table>
+{/if}
+
+{#if pendingUpdates.length}
+	<h2>Image updates</h2>
+	<ImageUpdates checks={pendingUpdates} showStack />
 {/if}
 
 {#if deployments.data?.length}

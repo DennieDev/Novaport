@@ -19,6 +19,7 @@
 		{ href: '/secrets', label: 'Secrets', role: 'viewer' },
 		{ href: '/configs', label: 'Configs', role: 'viewer' },
 		{ href: '/repositories', label: 'Repositories', role: 'admin' },
+		{ href: '/registries', label: 'Registries', role: 'admin' },
 		{ href: '/access', label: 'Access', role: 'admin' },
 		{ href: '/audit', label: 'Audit log', role: 'admin' }
 	];

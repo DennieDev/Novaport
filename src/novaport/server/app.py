@@ -28,8 +28,11 @@ from novaport.docker.client import (
     NotFound,
     NotSwarmManager,
 )
+from novaport.git import Identity
 from novaport.jobs import Jobs
 from novaport.models import Outcome
+from novaport.registries.client import Login, RegistryClient
+from novaport.registries.store import all_logins, login_lookup
 from novaport.server.api import access as access_api
 from novaport.server.api import agents as agents_api
 from novaport.server.api import (
@@ -41,11 +44,14 @@ from novaport.server.api import (
     stacks,
     webhooks,
 )
+from novaport.server.api import registries as registries_api
+from novaport.server.api import updates as updates_api
 from novaport.server.origin import SAFE_METHODS, SameOriginMiddleware
 from novaport.server.static import SPAStaticFiles
 from novaport.sops import Sops
 from novaport.stacks.editing import StackEditor
 from novaport.stacks.sync import Syncer, mirror_for
+from novaport.updates.checker import UpdateChecker
 
 log = logging.getLogger(__name__)
 
@@ -137,6 +143,13 @@ def create_app(
 
         cipher = Cipher(settings.secret_key.get_secret_value() if settings.secret_key else None)
         syncer = Syncer(settings, engine, maker, cipher)
+        registry = RegistryClient(http, login_lookup(maker, cipher))
+        app.state.registry = registry
+
+        async def logins() -> dict[str, Login]:
+            async with maker() as db:
+                return await all_logins(db, cipher)
+
         pipeline = Pipeline(
             settings,
             maker,
@@ -147,6 +160,8 @@ def create_app(
             agents=lambda: app.state.agents,
             sops=lambda: app.state.sops,
             ensure_commit=lambda stack, commit: syncer.ensure_commit(stack.repository, commit),
+            registry=lambda: registry,
+            logins=logins,
         )
         sops = Sops(
             settings.sops_binary,
@@ -158,7 +173,19 @@ def create_app(
         app.state.syncer = syncer
         app.state.pipeline = pipeline
         app.state.webhook_tasks = set()
-        app.state.jobs = Jobs(engine, maker, syncer, pipeline) if settings.background_jobs else None
+        app.state.updates = UpdateChecker(
+            engine,
+            maker,
+            app.state.editor,
+            registry,
+            reader=lambda: app.state.docker,
+            author=Identity(settings.commit_name, settings.commit_email),
+        )
+        app.state.jobs = (
+            Jobs(engine, maker, syncer, pipeline, app.state.updates, settings.update_interval)
+            if settings.background_jobs
+            else None
+        )
         if app.state.jobs is not None:
             app.state.jobs.start()
         try:
@@ -196,6 +223,8 @@ def create_app(
     app.include_router(stacks.router)
     app.include_router(webhooks.router)
     app.include_router(editing.router)
+    app.include_router(registries_api.router)
+    app.include_router(updates_api.router)
     app.include_router(agents_api.router)
     app.include_router(agents_api.ws_router)
 

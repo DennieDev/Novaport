@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import asyncio
+import json
 import shutil
 import uuid
 from collections.abc import AsyncIterator, Mapping
@@ -30,6 +31,7 @@ from novaport.models import (
     StackType,
 )
 from novaport.process import Result
+from novaport.registries.client import Login
 from novaport.sops import Sops, generate_age_key
 from novaport.stacks.sync import Syncer, mirror_for, mirror_path
 from tests.conftest import SOPS_BINARY, TEST_SECRET_KEY, make_settings
@@ -182,6 +184,25 @@ async def test_successful_swarm_deploy(env: Env) -> None:
     assert d.finished_at is not None
     assert [e.stage for e in d.events][:4] == ["resolve", "validate", "preflight", "apply"]
     assert d.events[-1].message == "All services are running."
+
+
+async def test_registry_logins_reach_the_deploy(env: Env) -> None:
+    seen: dict[str, str] = {}
+    original = env.cli.apply
+
+    async def apply(*args: Any) -> Result:
+        config = Path(args[-1]["DOCKER_CONFIG"]) / "config.json"
+        seen.update(json.loads(config.read_text())["auths"])
+        return await original(*args)
+
+    async def logins() -> dict[str, Login]:
+        return {"ghcr.io": Login("bot", "pw")}
+
+    env.cli.apply = apply  # type: ignore[method-assign]
+    env.pipeline.logins = logins
+    status = await env.pipeline.run(await env.setup())
+    assert status == DeploymentStatus.SUCCEEDED
+    assert list(seen) == ["ghcr.io"]
 
 
 async def test_validation_failure_stops_before_apply(env: Env) -> None:

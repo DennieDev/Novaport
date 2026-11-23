@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     # Allow file:// and plain-path repository URLs. Off by default, since they read the
     # server's own filesystem.
     allow_local_repositories: bool = False
+    # How often services with an x-updates policy are checked for newer images.
+    update_interval: timedelta = timedelta(hours=6)
     deploy_timeout: timedelta = timedelta(minutes=5)
     command_timeout: timedelta = timedelta(minutes=2)
 

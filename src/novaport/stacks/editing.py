@@ -231,14 +231,17 @@ class StackEditor:
         message: str,
         author: Identity,
         base: str,
+        mode: EditMode | None = None,
+        branch: str | None = None,
+        pr_body: str | None = None,
     ) -> EditResult:
         mirror = self._mirror(repo)
         credentials = credentials_for(repo, self.cipher)
         full = {f"{stack.path}/{p}": c for p, c in changes.items()}
 
-        if stack.edit_mode == EditMode.PR:
+        if (mode or stack.edit_mode) == EditMode.PR:
             commit = await mirror.commit(tip, full, message, author, self.committer)
-            branch = f"novaport/{stack.name}-{commit[:8]}"
+            branch = branch or f"novaport/{stack.name}-{commit[:8]}"
             try:
                 await mirror.push(commit, branch, credentials)
                 url = await open_pull_request(
@@ -249,7 +252,7 @@ class StackEditor:
                     head=branch,
                     base=repo.branch,
                     title=message.splitlines()[0],
-                    body=f"Changed {stack.name} in Novaport.",
+                    body=pr_body or f"Changed {stack.name} in Novaport.",
                 )
             except (GitError, ForgeError) as exc:
                 raise EditError(str(exc)) from exc
@@ -282,6 +285,24 @@ class StackEditor:
         message: str,
         validate: bool = True,
     ) -> EditResult:
+        return await self.save_as(
+            stack, author_for(user), base, changes, message, validate=validate
+        )
+
+    async def save_as(
+        self,
+        stack: Stack,
+        author: Identity,
+        base: str,
+        changes: dict[str, str | None],
+        message: str,
+        *,
+        validate: bool = True,
+        mode: EditMode | None = None,
+        branch: str | None = None,
+        pr_body: str | None = None,
+    ) -> EditResult:
+        """Save changes with an explicit author and, optionally, a different edit mode."""
         encoded = {
             check_path(p): (c.encode() if c is not None else None) for p, c in changes.items()
         }
@@ -302,10 +323,35 @@ class StackEditor:
                 if validate:
                     await self._validate(mirror, stack, tip, encoded)
                 result = await self._publish(
-                    db, repo, stack, tip, encoded, message, author_for(user), base
+                    db,
+                    repo,
+                    stack,
+                    tip,
+                    encoded,
+                    message,
+                    author,
+                    base,
+                    mode=mode,
+                    branch=branch,
+                    pr_body=pr_body,
                 )
                 await db.commit()
                 return result
+
+    async def read_compose(self, stack: Stack) -> tuple[str, str, str]:
+        """Fetch and return (tip commit, compose file name, its content)."""
+        repo = stack.repository
+        async with lock(self.engine, f"sync:{repo.id}"):
+            tip = await self._fetch(repo)
+            mirror = self._mirror(repo)
+            files = await mirror.list_files(tip, stack.path)
+            name = next((f for f in COMPOSE_FILES if f in files), None)
+            if name is None:
+                raise EditError("The stack has no compose file.")
+            content = await mirror.read_file(tip, f"{stack.path}/{name}")
+        if content is None:
+            raise EditError(f"Could not read {name}.")
+        return tip, name, content
 
     async def has_secrets(self, stack: Stack, commit: str) -> bool:
         files = await self._mirror(stack.repository).list_files(commit, stack.path)

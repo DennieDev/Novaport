@@ -32,6 +32,8 @@ from novaport.docker.views import STACK_LABEL
 from novaport.git import GitError, GitMirror
 from novaport.models import Deployment, DeploymentEvent, DeploymentStatus, Stack, StackType
 from novaport.process import CommandTimeout, Result
+from novaport.registries.client import Login, RegistryClient
+from novaport.registries.store import docker_config
 from novaport.sops import SECRETS_FILE, Sops, SopsError
 from novaport.stacks.settings import COMPOSE_FILES
 
@@ -58,7 +60,11 @@ class Pipeline:
         agents: Callable[[], Agents | None] = lambda: None,
         sops: Callable[[], Sops | None] = lambda: None,
         ensure_commit: Callable[[Stack, str], Awaitable[None]] | None = None,
+        registry: Callable[[], RegistryClient | None] = lambda: None,
+        logins: Callable[[], Awaitable[dict[str, Login]]] | None = None,
     ) -> None:
+        self.registry = registry
+        self.logins = logins
         self.settings = settings
         self.sessionmaker = sessionmaker
         self.cli = cli
@@ -197,15 +203,17 @@ class Pipeline:
 
             await self._event(db, deployment, "apply", "info", f"Deploying stack {stack.name}")
             started = datetime.now(UTC)
+            logins = await self.logins() if self.logins else {}
             try:
-                result = await self.cli.apply(
-                    stack.type,
-                    stack.name,
-                    folder,
-                    RENDERED_FILE,
-                    timeout,
-                    env if stack.type == StackType.COMPOSE else {},
-                )
+                with docker_config(logins) as auth_env:
+                    result = await self.cli.apply(
+                        stack.type,
+                        stack.name,
+                        folder,
+                        RENDERED_FILE,
+                        timeout,
+                        (env if stack.type == StackType.COMPOSE else {}) | auth_env,
+                    )
             except CommandTimeout as exc:
                 raise DeployFailed("apply", str(exc)) from exc
             await self._command(db, deployment, "apply", result)
@@ -265,10 +273,17 @@ class Pipeline:
                 db, deployment, "preflight", "warning", "Skipped: no Docker connection."
             )
             return
-        await self._event(db, deployment, "preflight", "info", "Checking mounts and references")
+        await self._event(
+            db, deployment, "preflight", "info", "Checking images, mounts, and references"
+        )
         stack = deployment.stack
         report = await preflight(
-            yaml.safe_load(normalized), stack.type, stack.name, reader, self.agents()
+            yaml.safe_load(normalized),
+            stack.type,
+            stack.name,
+            reader,
+            self.agents(),
+            self.registry(),
         )
         for note in report.notes:
             await self._event(db, deployment, "preflight", "info", note)

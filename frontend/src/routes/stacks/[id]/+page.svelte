@@ -5,16 +5,32 @@
 	import { api, errorMessage } from '#lib/api.ts';
 	import Badge from '#lib/components/Badge.svelte';
 	import DeploymentRow from '#lib/components/DeploymentRow.svelte';
+	import ImageUpdates from '#lib/components/ImageUpdates.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago } from '#lib/format.ts';
 	import { poll } from '#lib/poll.svelte.ts';
 	import { can } from '#lib/session.svelte.ts';
-	import type { Deployment, Revision, Stack } from '#lib/types.ts';
+	import type { Deployment, ImageCheck, Revision, Stack } from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
 	const stack = poll<Stack>(() => `/stacks/${id}`, 5000);
 	const revisions = poll<Revision[]>(() => `/stacks/${id}/revisions`, 15_000);
 	const deployments = poll<Deployment[]>(() => `/stacks/${id}/deployments?limit=20`, 5000);
+	const updates = poll<ImageCheck[]>(() => `/stacks/${id}/updates`, 60_000);
+	let checking = $state(false);
+
+	async function checkUpdates() {
+		checking = true;
+		error = undefined;
+		try {
+			await api.post(`/stacks/${id}/updates/check`);
+			await Promise.all([updates.refresh(), deployments.refresh(), revisions.refresh()]);
+		} catch (e) {
+			error = errorMessage(e);
+		} finally {
+			checking = false;
+		}
+	}
 
 	let error = $state<string | undefined>();
 	let busy = $state(false);
@@ -99,6 +115,23 @@
 		{#if can('admin')}<a href="/access/bindings?stack={s.id}">Access</a>{/if}
 		{#if error}<span class="error">{error}</span>{/if}
 	</p>
+
+	<h2>Image updates</h2>
+	{#if updates.data?.length}
+		<ImageUpdates checks={updates.data} />
+	{:else}
+		<p class="muted">
+			No service has an <code>x-updates</code> policy. Add one to a service in the compose file
+			to have Novaport look for newer images.
+		</p>
+	{/if}
+	{#if can('operator', s.id) && !s.removed_at}
+		<p>
+			<button onclick={checkUpdates} disabled={checking}>
+				{checking ? 'Checking…' : 'Check for updates now'}
+			</button>
+		</p>
+	{/if}
 
 	<h2>Deployments</h2>
 	<table>

@@ -15,13 +15,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from novaport.auth.sessions import delete_expired_sessions
 from novaport.deploy.pipeline import Pipeline
 from novaport.locks import try_lock
-from novaport.models import Deployment, DeploymentStatus, Repository
+from novaport.models import Deployment, DeploymentStatus, Repository, Stack
 from novaport.stacks.sync import Syncer
+from novaport.updates.checker import UpdateChecker
 
 log = logging.getLogger(__name__)
 
 POLL_TICK = 15.0
 DEPLOY_TICK = 5.0
+UPDATE_TICK = 60.0
 HOUSEKEEPING_INTERVAL = timedelta(hours=1)
 
 
@@ -32,7 +34,12 @@ class Jobs:
         sessionmaker: async_sessionmaker[AsyncSession],
         syncer: Syncer,
         pipeline: Pipeline,
+        updates: UpdateChecker | None = None,
+        update_interval: timedelta = timedelta(hours=6),
     ) -> None:
+        self.updates = updates
+        self.update_interval = update_interval
+        self._checked: dict[uuid.UUID, datetime] = {}
         self.engine = engine
         self.sessionmaker = sessionmaker
         self.syncer = syncer
@@ -52,6 +59,13 @@ class Jobs:
                 self._loop(self.run_deployments, DEPLOY_TICK, self._wake), name="deployer"
             ),
         ]
+        if self.updates is not None:
+            self._tasks.append(
+                asyncio.create_task(
+                    self._loop(self.check_updates, UPDATE_TICK, asyncio.Event()),
+                    name="update-checker",
+                )
+            )
 
     async def stop(self) -> None:
         tasks = [*self._tasks, *self._syncing.values(), *self._deploying.values()]
@@ -110,6 +124,26 @@ class Jobs:
                 await delete_expired_sessions(db)
         for repo_id in due:
             self.request_sync(repo_id)
+
+    async def check_updates(self) -> None:
+        """Check stacks whose last update check is older than the interval, one at a time."""
+        if self.updates is None:
+            return
+        async with try_lock(self.engine, "update-checks") as acquired:
+            if not acquired:
+                return
+            async with self.sessionmaker() as db:
+                stack_ids = list(
+                    await db.scalars(select(Stack.id).where(Stack.removed_at.is_(None)))
+                )
+            now = datetime.now(UTC)
+            for stack_id in stack_ids:
+                last = self._checked.get(stack_id)
+                if last is not None and now - last < self.update_interval:
+                    continue
+                self._checked[stack_id] = now
+                await self.updates.check(stack_id)
+                self.wake()
 
     async def run_deployments(self) -> None:
         async with self.sessionmaker() as db:

@@ -13,6 +13,7 @@ from novaport.models.access import (
     Role,
     RoleBinding,
 )
+from novaport.models.registry import ImageCheck, Registry
 from novaport.models.stack import (
     Deployment,
     DeploymentEvent,
@@ -39,9 +40,11 @@ __all__ = [
     "Group",
     "GroupMapping",
     "GroupMember",
+    "ImageCheck",
     "LoginState",
     "OidcProvider",
     "Outcome",
+    "Registry",
     "Repository",
     "Revision",
     "Role",
