@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     smtp_from: str = "novaport@localhost"
     deploy_timeout: timedelta = timedelta(minutes=5)
     command_timeout: timedelta = timedelta(minutes=2)
+    # Refuse to let someone approve, or deploy on an approve-mode stack, a revision they
+    # authored. Authors are matched on the commit's email address.
+    separate_approver: bool = False
+    # Finished deployments and their logs older than this are deleted, but each stack keeps at
+    # least `keep_deployments` of them. Revisions without deployments age out the same way.
+    # 0d keeps everything.
+    deployment_retention: timedelta = timedelta(days=90)
+    keep_deployments: int = 20
+    audit_retention: timedelta = timedelta(days=365)
 
     # Shared between server and agents; agents refuse to start without it.
     agent_token: SecretStr | None = None

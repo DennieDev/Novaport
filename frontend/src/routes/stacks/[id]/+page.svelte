@@ -53,6 +53,24 @@
 			busy = false;
 		}
 	}
+
+	let restarted = $state(false);
+
+	async function restart() {
+		const s = stack.data;
+		if (!s || !confirm(`Restart every service of ${s.name}?`)) return;
+		busy = true;
+		error = undefined;
+		restarted = false;
+		try {
+			await api.post(`/stacks/${id}/restart`);
+			restarted = true;
+		} catch (e) {
+			error = errorMessage(e);
+		} finally {
+			busy = false;
+		}
+	}
 </script>
 
 <p><a href="/stacks">← Stacks</a></p>
@@ -119,6 +137,7 @@
 			<button onclick={() => deploy()} disabled={busy || !s.latest_revision || !!s.removed_at}>
 				Deploy latest
 			</button>
+			<button onclick={restart} disabled={busy || !!s.removed_at}>Restart</button>
 		{/if}
 		{#if !s.removed_at}
 			<a href="/stacks/{s.id}/edit">{can('editor', s.id) ? 'Edit files' : 'Files'}</a>
@@ -127,6 +146,7 @@
 		<a href="/services?stack={s.name}">Services</a>
 		{#if can('admin')}<a href="/access/bindings?stack={s.id}">Access</a>{/if}
 		{#if error}<span class="error">{error}</span>{/if}
+		{#if restarted}<span class="muted">Restart started.</span>{/if}
 	</p>
 
 	<h2>Image updates</h2>

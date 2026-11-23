@@ -1,16 +1,38 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
 	import { page } from '$app/state';
+	import { api, errorMessage } from '#lib/api.ts';
 	import Badge from '#lib/components/Badge.svelte';
 	import LogViewer from '#lib/components/LogViewer.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago, degraded, replicas, shortId } from '#lib/format.ts';
 	import { poll } from '#lib/poll.svelte.ts';
-	import type { Service, Task } from '#lib/types.ts';
+	import { can } from '#lib/session.svelte.ts';
+	import type { Service, Stack, Task } from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
 	const service = poll<Service>(() => `/services/${id}`);
 	const tasks = poll<Task[]>(() => `/services/${id}/tasks`, 5000);
+
+	const stacks = poll<Stack[]>(() => '/stacks', 60_000);
+	const stackId = $derived(stacks.data?.find((st) => st.name === service.data?.stack)?.id);
+
+	let restarting = $state(false);
+	let restartError = $state<string | undefined>();
+
+	async function restart() {
+		if (!service.data || !confirm(`Restart ${service.data.name}?`)) return;
+		restarting = true;
+		restartError = undefined;
+		try {
+			await api.post(`/services/${id}/restart`);
+			await tasks.refresh();
+		} catch (e) {
+			restartError = errorMessage(e);
+		} finally {
+			restarting = false;
+		}
+	}
 
 	let showHistory = $state(false);
 	let showEnv = $state(false);
@@ -29,6 +51,13 @@
 		{s.name}
 		{#if s.stack}<span class="muted">· stack {s.stack}</span>{/if}
 	</h1>
+
+	{#if can('operator', stackId)}
+		<p>
+			<button onclick={restart} disabled={restarting}>Restart</button>
+			{#if restartError}<span class="error">{restartError}</span>{/if}
+		</p>
+	{/if}
 
 	<div class="panel">
 		<dl class="kv">

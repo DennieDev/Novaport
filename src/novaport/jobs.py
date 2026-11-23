@@ -17,6 +17,7 @@ from novaport.deploy.pipeline import Pipeline
 from novaport.locks import try_lock
 from novaport.models import Deployment, DeploymentStatus, Repository, Stack
 from novaport.monitor import Monitor
+from novaport.retention import Retention, prune
 from novaport.stacks.sync import Syncer
 from novaport.updates.checker import UpdateChecker
 
@@ -40,7 +41,9 @@ class Jobs:
         update_interval: timedelta = timedelta(hours=6),
         monitor: Monitor | None = None,
         drift_interval: timedelta = timedelta(minutes=5),
+        retention: Retention | None = None,
     ) -> None:
+        self.retention = retention
         self.monitor = monitor
         self.drift_interval = drift_interval
         self.updates = updates
@@ -143,6 +146,16 @@ class Jobs:
             if now - self._last_housekeeping >= HOUSEKEEPING_INTERVAL:
                 self._last_housekeeping = now
                 await delete_expired_sessions(db)
+                if self.retention is not None:
+                    pruned = await prune(db, self.retention)
+                    if pruned.deployments or pruned.revisions or pruned.audit_entries:
+                        log.info(
+                            "Deleted %d deployments, %d revisions, and %d audit entries "
+                            "past retention",
+                            pruned.deployments,
+                            pruned.revisions,
+                            pruned.audit_entries,
+                        )
         for repo_id in due:
             self.request_sync(repo_id)
 

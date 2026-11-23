@@ -35,6 +35,7 @@ from novaport.monitor import Monitor, update_event
 from novaport.notifications import Notifier
 from novaport.registries.client import Login, RegistryClient
 from novaport.registries.store import all_logins, login_lookup
+from novaport.retention import Retention
 from novaport.server.api import access as access_api
 from novaport.server.api import agents as agents_api
 from novaport.server.api import (
@@ -48,8 +49,14 @@ from novaport.server.api import (
 )
 from novaport.server.api import notifications as notifications_api
 from novaport.server.api import registries as registries_api
+from novaport.server.api import restart as restart_api
 from novaport.server.api import updates as updates_api
 from novaport.server.origin import SAFE_METHODS, SameOriginMiddleware
+from novaport.server.security import (
+    SecurityHeadersMiddleware,
+    content_security_policy,
+    inline_script_hashes,
+)
 from novaport.server.static import SPAStaticFiles
 from novaport.sops import Sops
 from novaport.stacks.editing import StackEditor
@@ -210,6 +217,11 @@ def create_app(
                 settings.update_interval,
                 monitor=monitor,
                 drift_interval=settings.drift_interval,
+                retention=Retention(
+                    settings.deployment_retention,
+                    settings.keep_deployments,
+                    settings.audit_retention,
+                ),
             )
             if settings.background_jobs
             else None
@@ -240,6 +252,8 @@ def create_app(
     app.state.settings = settings
     app.state.login_throttle = LoginThrottle()
     app.add_middleware(SameOriginMiddleware)
+    hashes = inline_script_hashes(settings.static_dir / "index.html") if settings.static_dir else []
+    app.add_middleware(SecurityHeadersMiddleware, policy=content_security_policy(hashes))
     _install_error_handlers(app)
     agents_api.install_error_handlers(app)
 
@@ -255,6 +269,7 @@ def create_app(
     app.include_router(registries_api.router)
     app.include_router(updates_api.router)
     app.include_router(notifications_api.router)
+    app.include_router(restart_api.router)
     app.include_router(agents_api.router)
     app.include_router(agents_api.ws_router)
 

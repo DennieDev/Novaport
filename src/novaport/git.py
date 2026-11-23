@@ -43,6 +43,7 @@ class CommitInfo:
     author: str
     committed_at: datetime
     message: str
+    author_email: str = ""
 
 
 class GitError(Exception):
@@ -176,9 +177,11 @@ class GitMirror:
 
     async def last_commit(self, commit: str, path: str) -> CommitInfo:
         """The most recent commit at or before `commit` that touched `path`."""
-        out = await self._git("log", "-1", "--format=%H%x00%an%x00%cI%x00%s", commit, "--", path)
-        sha, author, when, message = out.rstrip("\n").split("\0", 3)
-        return CommitInfo(sha, author, datetime.fromisoformat(when), message)
+        out = await self._git(
+            "log", "-1", "--format=%H%x00%an%x00%ae%x00%cI%x00%s", commit, "--", path
+        )
+        sha, author, email, when, message = out.rstrip("\n").split("\0", 4)
+        return CommitInfo(sha, author, datetime.fromisoformat(when), message, email)
 
     async def export(self, commit: str, path: str, dest: Path) -> Path:
         """Write the contents of `path` at `commit` under `dest` and return that folder."""

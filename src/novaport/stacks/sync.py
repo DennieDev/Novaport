@@ -163,6 +163,7 @@ class Syncer:
                 tree=tree,
                 message=info.message,
                 author=info.author,
+                author_email=info.author_email,
                 committed_at=info.committed_at,
                 created_at=datetime.now(UTC),
             )

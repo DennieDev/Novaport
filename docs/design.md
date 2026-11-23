@@ -212,7 +212,11 @@ ignored. Compose projects are not checked yet.
   for each.
 - What happens next depends on the stack's deploy mode:
   - `auto`: deploy immediately.
-  - `approve`: the revision waits until a user with permission approves it.
+  - `approve`: the revision waits until a user with permission approves it. With
+    `NOVAPORT_SEPARATE_APPROVER=true`, the author of the change can't approve it, or deploy it by
+    hand on that stack. Authors are matched on the commit's email address; edits made in Novaport
+    carry the user's email, or `<username>@novaport.local` when they have none. The setting is
+    server-wide rather than in `novaport.yaml`, so a change can't switch it off for itself.
   - `manual`: the revision is recorded and nothing else happens.
 - Stack folders that appear or disappear create or (after confirmation) remove stacks.
 
@@ -358,6 +362,18 @@ state-changing requests are recorded too. Secret values are never written to it;
 Terminal sessions are recorded when the connection to the agent is established. The audit log is
 append-only in the application.
 
+### Retention
+
+An hourly job deletes history past its retention:
+
+- Finished deployments and their logs after 90 days (`NOVAPORT_DEPLOYMENT_RETENTION`), keeping the
+  newest 20 per stack (`NOVAPORT_KEEP_DEPLOYMENTS`) however old they are.
+- Revisions after the same 90 days, unless a remaining deployment uses them, they are a stack's
+  last good revision, or they are among the newest 20 of their stack. Git still has every commit.
+- Audit entries after a year (`NOVAPORT_AUDIT_RETENTION`).
+
+A retention of `0d` keeps everything.
+
 ## Registries
 
 Registry credentials are stored encrypted in the database, one login per registry host
@@ -433,7 +449,9 @@ support is solid.
   the main defense, so RBAC is enforced on every endpoint, including WebSocket upgrades.
 - The agent mounts the host filesystem read-only and only exposes the operations listed above.
   Path checks resolve symlinks and reject paths outside `/`.
-- CSRF protection on all state-changing requests. Strict CSP on the frontend.
+- CSRF protection on all state-changing requests. Strict CSP on the frontend: scripts only from
+  Novaport itself plus hashes of the inline bootstrap script in the built `index.html`, no
+  framing. Styles allow inline, which CodeMirror and xterm.js need.
 - Webhook payloads are verified before any work happens.
 - Git credentials, registry credentials, and the age key are never returned by the API.
 
@@ -463,6 +481,4 @@ support is solid.
 
 - Multiple Swarm clusters from one server: through outbound agents, the same way as standalone
   hosts, or one Novaport per cluster?
-- Should `approve` mode support requiring approval from someone other than the author?
-- How long to keep revisions, deployment events, and audit entries by default?
 - Does Novaport need to read stacks that were deployed outside it, to help with migration?

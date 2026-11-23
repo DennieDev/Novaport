@@ -31,6 +31,12 @@ class DockerCli(Protocol):
 
     async def remove_secrets(self, names: list[str]) -> Result: ...
 
+    async def restart_service(self, name: str) -> Result:
+        """Replace a Swarm service's tasks without changing its spec."""
+        ...
+
+    async def restart_containers(self, ids: list[str]) -> Result: ...
+
 
 class SubprocessDockerCli:
     def __init__(self, docker_host: str | None, timeout: float) -> None:
@@ -96,4 +102,17 @@ class SubprocessDockerCli:
     async def remove_secrets(self, names: list[str]) -> Result:
         return await run(
             ["docker", "secret", "rm", *names], env=self.env, timeout=self.timeout, check=False
+        )
+
+    async def restart_service(self, name: str) -> Result:
+        return await run(
+            ["docker", "service", "update", "--force", "--detach", name],
+            env=self.env,
+            timeout=self.timeout,
+            check=False,
+        )
+
+    async def restart_containers(self, ids: list[str]) -> Result:
+        return await run(
+            ["docker", "restart", *ids], env=self.env, timeout=self.timeout, check=False
         )

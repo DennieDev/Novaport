@@ -128,6 +128,7 @@ class Revision(Base):
     tree: Mapped[str] = mapped_column(String(64))
     message: Mapped[str] = mapped_column(Text, default="")
     author: Mapped[str] = mapped_column(String(255), default="")
+    author_email: Mapped[str] = mapped_column(String(320), default="", server_default="")
     committed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

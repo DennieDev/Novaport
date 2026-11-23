@@ -84,11 +84,21 @@ Users from a provider start without roles. Map values of the provider's groups c
 groups, then give the groups a role, either on everything or on single stacks:
 
 - viewer: stacks, services, logs, history
-- operator: also deploy, approve, roll back, and open terminals
+- operator: also deploy, approve, roll back, restart, and open terminals
 - editor: also edit files and secrets
 - admin: everything, including repositories and access
 
 Logins, changes, secret reveals, terminal sessions, and refused attempts end up in the audit log.
+
+Set `NOVAPORT_SEPARATE_APPROVER=true` to stop people from approving their own changes on stacks
+in `approve` mode.
+
+## History
+
+Finished deployments and unused revisions are deleted after 90 days, keeping at least the newest 20
+per stack. Audit entries are kept for a year. Change this with `NOVAPORT_DEPLOYMENT_RETENTION`,
+`NOVAPORT_KEEP_DEPLOYMENTS`, and `NOVAPORT_AUDIT_RETENTION` (for example `30d`, or `0d` to keep
+everything).
 
 ## Development
 

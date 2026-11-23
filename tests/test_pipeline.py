@@ -94,6 +94,14 @@ class FakeCli:
         self.removed_secrets = list(names)
         return _ok()
 
+    async def restart_service(self, name: str) -> Result:
+        self.calls.append(f"restart-service {name}")
+        return _ok()
+
+    async def restart_containers(self, ids: list[str]) -> Result:
+        self.calls.append(f"restart-containers {' '.join(ids)}")
+        return _ok()
+
 
 def converged_service(stack: str) -> dict[str, Any]:
     return {

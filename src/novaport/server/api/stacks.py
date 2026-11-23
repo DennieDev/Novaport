@@ -8,7 +8,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from novaport.auth.access import Access
+from novaport.auth.access import Access, Forbidden
+from novaport.config import Settings
 from novaport.models import (
     Deployment,
     DeploymentEvent,
@@ -185,6 +186,23 @@ def _audit_deployment(access: Access, db: DB, action: str, deployment: Deploymen
     )
 
 
+def _check_separate_approver(
+    request: Request, access: Access, stack: Stack, revision: Revision, action: str
+) -> None:
+    settings: Settings = request.app.state.settings
+    if not settings.separate_approver or stack.deploy_mode != DeployMode.APPROVE:
+        return
+    user = access.user
+    own = {f"{user.username}@novaport.local", (user.email or "")} - {""}
+    if revision.author_email.lower() in {e.lower() for e in own}:
+        raise Forbidden(
+            "Someone other than the author of this change has to approve it.",
+            action=action,
+            target=stack.name,
+            stack_id=stack.id,
+        )
+
+
 def _wake(request: Request) -> None:
     if request.app.state.jobs is not None:
         request.app.state.jobs.wake()
@@ -250,6 +268,7 @@ async def deploy_stack(
             revision = None
     if revision is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Revision not found.")
+    _check_separate_approver(request, access, stack, revision, "stack.deploy")
 
     deployment = await queue_deployment(
         db, stack, revision, trigger="manual", user_id=access.user.id
@@ -303,6 +322,9 @@ async def approve_deployment(
     access.require(Role.OPERATOR, deployment.stack_id, action="deployment.approve")
     if deployment.status != DeploymentStatus.AWAITING_APPROVAL:
         raise HTTPException(status.HTTP_409_CONFLICT, "This deployment isn't waiting for approval.")
+    _check_separate_approver(
+        request, access, deployment.stack, deployment.revision, "deployment.approve"
+    )
     deployment.status = DeploymentStatus.PENDING
     deployment.approved_by_id = access.user.id
     _audit_deployment(access, db, "deployment.approve", deployment)
