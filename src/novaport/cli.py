@@ -1,11 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import argparse
+import asyncio
+import getpass
+import sys
 from collections.abc import Sequence
 
 import uvicorn
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from novaport import __version__
+from novaport.auth.passwords import WeakPassword
+from novaport.auth.users import UserExists, create_admin
 from novaport.config import get_settings
+from novaport.db import create_engine
 from novaport.migrate import upgrade
 
 
@@ -21,6 +28,7 @@ def _server(args: argparse.Namespace) -> int:
         log_level=settings.log_level,
         reload=args.reload,
         proxy_headers=True,
+        forwarded_allow_ips=settings.trusted_proxies,
     )
     return 0
 
@@ -39,6 +47,35 @@ def _agent(args: argparse.Namespace) -> int:
 
 def _migrate(args: argparse.Namespace) -> int:
     upgrade(get_settings().database_url.get_secret_value(), args.revision)
+    return 0
+
+
+def _read_password(from_stdin: bool) -> str:
+    if from_stdin:
+        return sys.stdin.readline().rstrip("\n")
+    password = getpass.getpass("Password: ")
+    if getpass.getpass("Repeat password: ") != password:
+        raise SystemExit("Passwords don't match.")
+    return password
+
+
+async def _create_admin(username: str, password: str) -> None:
+    engine = create_engine(get_settings().database_url.get_secret_value())
+    try:
+        async with async_sessionmaker(engine)() as db:
+            await create_admin(db, username, password)
+    finally:
+        await engine.dispose()
+
+
+def _create_admin_command(args: argparse.Namespace) -> int:
+    password = _read_password(args.password_stdin)
+    try:
+        asyncio.run(_create_admin(args.username, password))
+    except (WeakPassword, UserExists) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print(f"Created admin {args.username!r}.")
     return 0
 
 
@@ -65,6 +102,13 @@ def build_parser() -> argparse.ArgumentParser:
     migrate = sub.add_parser("migrate", help="apply database migrations")
     migrate.add_argument("revision", nargs="?", default="head")
     migrate.set_defaults(func=_migrate)
+
+    admin = sub.add_parser("create-admin", help="create an admin user")
+    admin.add_argument("--username", default="admin")
+    admin.add_argument(
+        "--password-stdin", action="store_true", help="read the password from standard input"
+    )
+    admin.set_defaults(func=_create_admin_command)
 
     version = sub.add_parser("version", help="print the version")
     version.set_defaults(func=_version)

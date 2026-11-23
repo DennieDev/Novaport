@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+import asyncio
 import os
 from collections.abc import AsyncIterator
 
@@ -6,9 +7,13 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from novaport.config import Settings
+from novaport.migrate import upgrade
 from novaport.server.app import create_app
+from tests.fakes import FakeReader
 
 TEST_DATABASE_URL = os.environ.get("NOVAPORT_TEST_DATABASE_URL")
 
@@ -42,6 +47,26 @@ async def client_for(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
 
 
 @pytest.fixture
-async def client() -> AsyncIterator[httpx.AsyncClient]:
-    async for c in client_for(create_app(make_settings())):
+def reader() -> FakeReader:
+    return FakeReader()
+
+
+@pytest.fixture
+async def client(reader: FakeReader) -> AsyncIterator[httpx.AsyncClient]:
+    async for c in client_for(create_app(make_settings(), reader=reader)):
         yield c
+
+
+@pytest.fixture
+async def clean_db() -> AsyncIterator[str]:
+    """A migrated test database with no users or sessions."""
+    assert TEST_DATABASE_URL
+    # Alembic's env.py runs its own event loop, so it can't run on this one.
+    await asyncio.to_thread(upgrade, TEST_DATABASE_URL)
+    engine = create_async_engine(TEST_DATABASE_URL)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("TRUNCATE users, sessions CASCADE"))
+        yield TEST_DATABASE_URL
+    finally:
+        await engine.dispose()

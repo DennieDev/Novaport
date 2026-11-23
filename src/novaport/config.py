@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -33,6 +34,17 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: LogLevel = "info"
     static_dir: Path | None = None
+    # Comma-separated IPs or CIDRs whose X-Forwarded-For/-Proto headers are trusted.
+    trusted_proxies: str = "127.0.0.1"
+
+    # Unset means the usual resolution: DOCKER_HOST, then the local socket.
+    docker_host: str | None = None
+
+    initial_admin_username: str = "admin"
+    initial_admin_password: SecretStr | None = None
+    session_idle_timeout: timedelta = timedelta(hours=8)
+    session_max_age: timedelta = timedelta(days=7)
+    session_cookie: str = "novaport_session"
 
     agent_port: int = 9001
     agent_token: SecretStr | None = None

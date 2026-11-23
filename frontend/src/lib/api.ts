@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { goto } from '$app/navigation';
+
 export class ApiError extends Error {
 	constructor(
 		readonly status: number,
@@ -8,18 +10,38 @@ export class ApiError extends Error {
 	}
 }
 
-export async function getJson<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
 	const response = await fetch(`/api${path}`, {
-		...init,
-		headers: { Accept: 'application/json', ...init?.headers }
+		method,
+		headers: {
+			Accept: 'application/json',
+			...(body === undefined ? {} : { 'Content-Type': 'application/json' })
+		},
+		body: body === undefined ? undefined : JSON.stringify(body)
 	});
-	if (!response.ok) {
-		throw new ApiError(response.status, `${response.status} ${response.statusText}`);
+	if (response.status === 401 && !path.startsWith('/auth/')) {
+		await goto(`/login?next=${encodeURIComponent(location.pathname)}`);
 	}
+	if (!response.ok) {
+		let detail = response.statusText;
+		try {
+			const data = await response.json();
+			if (typeof data.detail === 'string') detail = data.detail;
+		} catch {
+			// Not JSON; keep the status text.
+		}
+		throw new ApiError(response.status, detail);
+	}
+	if (response.status === 204) return undefined as T;
 	return (await response.json()) as T;
 }
 
-export interface Health {
-	status: string;
-	version: string;
+export const api = {
+	get: <T>(path: string) => request<T>('GET', path),
+	post: <T>(path: string, body?: unknown) => request<T>('POST', path, body)
+};
+
+export function websocketUrl(path: string): string {
+	const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+	return `${scheme}://${location.host}/api${path}`;
 }

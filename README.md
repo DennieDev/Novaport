@@ -18,10 +18,16 @@ Requirements: [uv](https://docs.astral.sh/uv/), Docker, and Node.js 22+ for the 
 docker compose -f compose.dev.yaml up -d   # Postgres on localhost:5432
 uv sync
 uv run novaport migrate
+uv run novaport create-admin
 uv run novaport server --reload
 ```
 
-The API is then available on http://localhost:8000 (`/api/docs` for the OpenAPI UI).
+The API is then available on http://localhost:8000 (`/api/docs` for the OpenAPI UI). Novaport
+talks to the Docker daemon from `NOVAPORT_DOCKER_HOST`, `DOCKER_HOST`, or the local socket, and
+needs a Swarm manager for the Swarm views.
+
+Instead of `create-admin`, set `NOVAPORT_INITIAL_ADMIN_PASSWORD` (at least 12 characters) to have
+the server create an `admin` user on first start, when no users exist yet.
 
 Frontend, with the dev server proxying `/api` to the backend:
 
