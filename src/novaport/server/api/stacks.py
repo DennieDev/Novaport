@@ -82,6 +82,9 @@ class StackOut(BaseModel):
     latest_revision: RevisionOut | None
     last_good_revision: RevisionOut | None
     last_deployment: DeploymentOut | None
+    # None until a deploy through Novaport recorded the services (Swarm stacks only).
+    drift: list[str] | None
+    drift_checked_at: datetime | None
 
 
 class DeployRequest(BaseModel):
@@ -148,6 +151,8 @@ async def stack_out(db: DB, stack: Stack) -> StackOut:
             revision_out(stack.last_good_revision) if stack.last_good_revision else None
         ),
         last_deployment=deployment_out(last) if last else None,
+        drift=stack.drift if stack.deployed_spec is not None else None,
+        drift_checked_at=stack.drift_checked_at,
     )
 
 

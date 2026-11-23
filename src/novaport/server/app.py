@@ -31,6 +31,8 @@ from novaport.docker.client import (
 from novaport.git import Identity
 from novaport.jobs import Jobs
 from novaport.models import Outcome
+from novaport.monitor import Monitor, update_event
+from novaport.notifications import Notifier
 from novaport.registries.client import Login, RegistryClient
 from novaport.registries.store import all_logins, login_lookup
 from novaport.server.api import access as access_api
@@ -44,6 +46,7 @@ from novaport.server.api import (
     stacks,
     webhooks,
 )
+from novaport.server.api import notifications as notifications_api
 from novaport.server.api import registries as registries_api
 from novaport.server.api import updates as updates_api
 from novaport.server.origin import SAFE_METHODS, SameOriginMiddleware
@@ -51,7 +54,7 @@ from novaport.server.static import SPAStaticFiles
 from novaport.sops import Sops
 from novaport.stacks.editing import StackEditor
 from novaport.stacks.sync import Syncer, mirror_for
-from novaport.updates.checker import UpdateChecker
+from novaport.updates.checker import UpdateChecker, UpdateEvent
 
 log = logging.getLogger(__name__)
 
@@ -143,6 +146,8 @@ def create_app(
 
         cipher = Cipher(settings.secret_key.get_secret_value() if settings.secret_key else None)
         syncer = Syncer(settings, engine, maker, cipher)
+        notifier = Notifier(settings, maker, cipher, http)
+        app.state.notifier = notifier
         registry = RegistryClient(http, login_lookup(maker, cipher))
         app.state.registry = registry
 
@@ -162,6 +167,7 @@ def create_app(
             ensure_commit=lambda stack, commit: syncer.ensure_commit(stack.repository, commit),
             registry=lambda: registry,
             logins=logins,
+            notify=notifier.emit,
         )
         sops = Sops(
             settings.sops_binary,
@@ -181,8 +187,30 @@ def create_app(
             reader=lambda: app.state.docker,
             author=Identity(settings.commit_name, settings.commit_email),
         )
+
+        async def announce_update(event: UpdateEvent) -> None:
+            if (found := update_event(event)) is not None:
+                notifier.emit(found)
+
+        app.state.updates.hooks.append(announce_update)
+        monitor = Monitor(
+            engine,
+            maker,
+            notifier,
+            reader=lambda: app.state.docker,
+            agents=lambda: app.state.agents,
+        )
         app.state.jobs = (
-            Jobs(engine, maker, syncer, pipeline, app.state.updates, settings.update_interval)
+            Jobs(
+                engine,
+                maker,
+                syncer,
+                pipeline,
+                app.state.updates,
+                settings.update_interval,
+                monitor=monitor,
+                drift_interval=settings.drift_interval,
+            )
             if settings.background_jobs
             else None
         )
@@ -197,6 +225,7 @@ def create_app(
                 await pool.close()
             if docker is not None:
                 await docker.close()
+            await notifier.drain()
             await http.aclose()
             await engine.dispose()
 
@@ -225,6 +254,7 @@ def create_app(
     app.include_router(editing.router)
     app.include_router(registries_api.router)
     app.include_router(updates_api.router)
+    app.include_router(notifications_api.router)
     app.include_router(agents_api.router)
     app.include_router(agents_api.ws_router)
 

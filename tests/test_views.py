@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+import aiodocker
+
 from novaport.docker import views
+from novaport.docker.client import DockerUnavailable, NotFound, _translate
 from tests.fakes import (
     INFO,
     NETWORKS,
@@ -102,3 +105,9 @@ def test_secret_has_no_value_field() -> None:
     assert secret.name == "shop_db_password"
     assert secret.stack == "shop"
     assert "data" not in secret.model_dump()
+
+
+def test_connection_failure_means_docker_unavailable() -> None:
+    error = aiodocker.DockerError(900, {"message": "Cannot connect to Docker Engine"})
+    assert isinstance(_translate(error), DockerUnavailable)
+    assert isinstance(_translate(aiodocker.DockerError(404, {"message": "nope"})), NotFound)

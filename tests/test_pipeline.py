@@ -26,10 +26,12 @@ from novaport.models import (
     DeploymentEvent,
     DeploymentStatus,
     DeployMode,
+    EventType,
     Repository,
     Stack,
     StackType,
 )
+from novaport.notifications import Event
 from novaport.process import Result
 from novaport.registries.client import Login
 from novaport.sops import Sops, generate_age_key
@@ -184,6 +186,30 @@ async def test_successful_swarm_deploy(env: Env) -> None:
     assert d.finished_at is not None
     assert [e.stage for e in d.events][:4] == ["resolve", "validate", "preflight", "apply"]
     assert d.events[-1].message == "All services are running."
+
+
+async def test_success_records_baseline_and_notifies(env: Env) -> None:
+    events: list[Event] = []
+    env.pipeline.notify = events.append
+    deployment_id = await env.setup()
+    assert await env.pipeline.run(deployment_id) == DeploymentStatus.SUCCEEDED
+
+    d = await env.deployment(deployment_id)
+    assert d.stack.deployed_spec is not None
+    assert set(d.stack.deployed_spec) == {"web"}
+    assert d.stack.drift == []
+    [event] = events
+    assert event.type == EventType.DEPLOY_SUCCEEDED
+    assert event.link == f"/deployments/{deployment_id}"
+
+
+async def test_failure_notifies(env: Env) -> None:
+    events: list[Event] = []
+    env.pipeline.notify = events.append
+    env.cli.config_result = Result(("docker",), 1, "", "bad compose")
+    await env.pipeline.run(await env.setup())
+    assert [e.type for e in events] == [EventType.DEPLOY_FAILED]
+    assert "bad compose" in events[0].text
 
 
 async def test_registry_logins_reach_the_deploy(env: Env) -> None:

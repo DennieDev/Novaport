@@ -26,11 +26,20 @@ from novaport.deploy.compose import (
     materialize_secrets,
 )
 from novaport.deploy.converge import converge_swarm
+from novaport.deploy.drift import snapshot
 from novaport.deploy.preflight import preflight
 from novaport.docker.client import ClusterReader
 from novaport.docker.views import STACK_LABEL
 from novaport.git import GitError, GitMirror
-from novaport.models import Deployment, DeploymentEvent, DeploymentStatus, Stack, StackType
+from novaport.models import (
+    Deployment,
+    DeploymentEvent,
+    DeploymentStatus,
+    EventType,
+    Stack,
+    StackType,
+)
+from novaport.notifications import Event
 from novaport.process import CommandTimeout, Result
 from novaport.registries.client import Login, RegistryClient
 from novaport.registries.store import docker_config
@@ -62,7 +71,9 @@ class Pipeline:
         ensure_commit: Callable[[Stack, str], Awaitable[None]] | None = None,
         registry: Callable[[], RegistryClient | None] = lambda: None,
         logins: Callable[[], Awaitable[dict[str, Login]]] | None = None,
+        notify: Callable[[Event], None] | None = None,
     ) -> None:
+        self.notify = notify
         self.registry = registry
         self.logins = logins
         self.settings = settings
@@ -104,7 +115,41 @@ class Pipeline:
                 deployment.stack.last_good_revision_id = deployment.revision_id
             deployment.finished_at = datetime.now(UTC)
             await db.commit()
+            self._announce(deployment)
             return deployment.status
+
+    def _announce(self, deployment: Deployment) -> None:
+        if self.notify is None:
+            return
+        stack = deployment.stack
+        commit = deployment.revision.commit[:10]
+        if deployment.status == DeploymentStatus.SUCCEEDED:
+            kind, title, text = (
+                EventType.DEPLOY_SUCCEEDED,
+                f"Deployed {stack.name} at {commit}",
+                deployment.revision.message,
+            )
+        else:
+            kind, title, text = (
+                EventType.DEPLOY_FAILED,
+                f"Deploying {stack.name} at {commit} failed",
+                deployment.error or "",
+            )
+        self.notify(
+            Event(
+                kind,
+                title,
+                text,
+                stack_id=stack.id,
+                stack_name=stack.name,
+                link=f"/deployments/{deployment.id}",
+                data={
+                    "deployment": str(deployment.id),
+                    "commit": deployment.revision.commit,
+                    "trigger": deployment.trigger,
+                },
+            )
+        )
 
     async def _event(
         self, db: AsyncSession, deployment: Deployment, stage: str, level: str, message: str
@@ -221,8 +266,19 @@ class Pipeline:
         if stack.type == StackType.SWARM:
             await self._converge(db, deployment, started, timeout)
             await self._remove_old_secrets(db, deployment, set(secret_names.values()))
+            await self._snapshot(stack)
         else:
             await self._event(db, deployment, "converge", "info", "All containers are up.")
+
+    async def _snapshot(self, stack: Stack) -> None:
+        """Remember the services as deployed, as the baseline for drift detection."""
+        reader = self.reader()
+        if reader is None:
+            return
+        services = await reader.services(label=f"{STACK_LABEL}={stack.name}")
+        stack.deployed_spec = snapshot(services, stack.name)
+        stack.drift = []
+        stack.drift_checked_at = datetime.now(UTC)
 
     async def _decrypt_secrets(self, folder: Path) -> dict[str, str]:
         encrypted = folder / SECRETS_FILE

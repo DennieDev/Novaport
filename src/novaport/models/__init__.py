@@ -13,6 +13,12 @@ from novaport.models.access import (
     Role,
     RoleBinding,
 )
+from novaport.models.notification import (
+    ChannelKind,
+    EventType,
+    NotificationChannel,
+    NotificationSubscription,
+)
 from novaport.models.registry import ImageCheck, Registry
 from novaport.models.stack import (
     Deployment,
@@ -31,17 +37,21 @@ from novaport.models.user import Session, User
 __all__ = [
     "AuditEntry",
     "Base",
+    "ChannelKind",
     "DeployMode",
     "Deployment",
     "DeploymentEvent",
     "DeploymentStatus",
     "EditMode",
+    "EventType",
     "GitAuth",
     "Group",
     "GroupMapping",
     "GroupMember",
     "ImageCheck",
     "LoginState",
+    "NotificationChannel",
+    "NotificationSubscription",
     "OidcProvider",
     "Outcome",
     "Registry",

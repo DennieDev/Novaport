@@ -16,6 +16,7 @@ from novaport.auth.sessions import delete_expired_sessions
 from novaport.deploy.pipeline import Pipeline
 from novaport.locks import try_lock
 from novaport.models import Deployment, DeploymentStatus, Repository, Stack
+from novaport.monitor import Monitor
 from novaport.stacks.sync import Syncer
 from novaport.updates.checker import UpdateChecker
 
@@ -24,6 +25,7 @@ log = logging.getLogger(__name__)
 POLL_TICK = 15.0
 DEPLOY_TICK = 5.0
 UPDATE_TICK = 60.0
+HEALTH_TICK = 60.0
 HOUSEKEEPING_INTERVAL = timedelta(hours=1)
 
 
@@ -36,7 +38,11 @@ class Jobs:
         pipeline: Pipeline,
         updates: UpdateChecker | None = None,
         update_interval: timedelta = timedelta(hours=6),
+        monitor: Monitor | None = None,
+        drift_interval: timedelta = timedelta(minutes=5),
     ) -> None:
+        self.monitor = monitor
+        self.drift_interval = drift_interval
         self.updates = updates
         self.update_interval = update_interval
         self._checked: dict[uuid.UUID, datetime] = {}
@@ -59,6 +65,21 @@ class Jobs:
                 self._loop(self.run_deployments, DEPLOY_TICK, self._wake), name="deployer"
             ),
         ]
+        if self.monitor is not None:
+            self._tasks += [
+                asyncio.create_task(
+                    self._loop(
+                        self.monitor.check_drift,
+                        self.drift_interval.total_seconds(),
+                        asyncio.Event(),
+                    ),
+                    name="drift",
+                ),
+                asyncio.create_task(
+                    self._loop(self.monitor.check_health, HEALTH_TICK, asyncio.Event()),
+                    name="health",
+                ),
+            ]
         if self.updates is not None:
             self._tasks.append(
                 asyncio.create_task(
@@ -146,6 +167,8 @@ class Jobs:
                 self.wake()
 
     async def run_deployments(self) -> None:
+        if self.monitor is not None:
+            await self.monitor.announce_approvals()
         async with self.sessionmaker() as db:
             rows = (
                 await db.execute(

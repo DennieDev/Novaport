@@ -68,6 +68,16 @@ class Settings(BaseSettings):
     allow_local_repositories: bool = False
     # How often services with an x-updates policy are checked for newer images.
     update_interval: timedelta = timedelta(hours=6)
+    # How often running Swarm services are compared with what was last deployed.
+    drift_interval: timedelta = timedelta(minutes=5)
+    # Outgoing mail for email notification channels.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    # starttls, tls (implicit, usually port 465), or none
+    smtp_security: Literal["starttls", "tls", "none"] = "starttls"
+    smtp_from: str = "novaport@localhost"
     deploy_timeout: timedelta = timedelta(minutes=5)
     command_timeout: timedelta = timedelta(minutes=2)
 

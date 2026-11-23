@@ -195,6 +195,13 @@ A background job compares running services with the last deployed revision. A di
 example someone running `docker service update` by hand, shows the stack as drifted with a diff.
 Novaport does not correct drift on its own. A redeploy does.
 
+After a successful Swarm deploy Novaport stores each service's spec as the baseline. A job
+(`NOVAPORT_DRIFT_INTERVAL`, five minutes by default) compares the running specs with it and lists
+the differences by path: changed replicas, image, environment, removed services, and services
+with the stack's label that the stack doesn't define. `docker service update --force` only
+restarts tasks and is not drift, and the order of plain lists such as environment variables is
+ignored. Compose projects are not checked yet.
+
 ## Git sync
 
 ### Inbound (git to Novaport)
@@ -376,6 +383,17 @@ Events:
 
 Each channel can subscribe to events globally or per stack.
 
+- Webhooks get a JSON body (`event`, `title`, `text`, `stack`, `link`, `data`, `at`) and, when the
+  channel has a signing secret, an `X-Novaport-Signature: sha256=<HMAC of the body>` header. URLs
+  and secrets are encrypted in the database, since webhook URLs often carry a token.
+- Slack channels post to an incoming webhook. Email uses the SMTP server configured with
+  `NOVAPORT_SMTP_*`; channels only hold the recipients.
+- Delivery happens in the background, so a slow endpoint never holds up a deploy. The last
+  delivery time and error are shown per channel, and a test message can be sent from the UI.
+- Approval requests are announced once per deployment, whichever path created them. Drift is
+  announced when the differences change, not on every check. Nodes and agents are announced when
+  they go down; outages already in place when Novaport starts are not.
+
 ## Data model
 
 Main tables (columns abbreviated):
@@ -395,7 +413,8 @@ Main tables (columns abbreviated):
 - `image_checks`: id, stack_id, service, current_ref, candidate_ref, status, policy, error,
   checked_at, action_taken, acted_on_ref, action_ref
 - `registries`: id, host, username, encrypted password
-- `notification_channels`, `notification_subscriptions`
+- `notification_channels`: name, kind, encrypted url and signing secret, recipients, last delivery
+- `notification_subscriptions`: channel, event (or `*`), stack id (NULL for all)
 - `audit_log`: id, at, user_id, username, action, target, stack_id, ip, outcome, details
 - `settings`
 

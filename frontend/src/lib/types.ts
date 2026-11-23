@@ -301,6 +301,8 @@ export interface Stack {
 	latest_revision: Revision | null;
 	last_good_revision: Revision | null;
 	last_deployment: Deployment | null;
+	drift: string[] | null;
+	drift_checked_at: string | null;
 }
 
 export interface AgentStatus {
@@ -415,4 +417,23 @@ export interface ImageCheck {
 	checked_at: string;
 	action_taken: 'committed' | 'pr_opened' | 'notified' | 'recorded' | 'failed' | null;
 	action_ref: string | null;
+}
+
+export interface NotificationSubscription {
+	event: string;
+	stack_id: string | null;
+	stack_name?: string | null;
+}
+
+export interface NotificationChannel {
+	id: string;
+	name: string;
+	kind: 'webhook' | 'slack' | 'email';
+	enabled: boolean;
+	has_url: boolean;
+	has_signing_secret: boolean;
+	recipients: string | null;
+	subscriptions: NotificationSubscription[];
+	last_sent_at: string | null;
+	last_error: string | null;
 }

@@ -46,6 +46,9 @@ def _translate(exc: Exception) -> Exception:
             return NotFound(exc.message)
         if exc.status == 503 and "swarm" in exc.message.lower():
             return NotSwarmManager(exc.message)
+        # aiodocker's status for "couldn't connect at all".
+        if exc.status == 900:
+            return DockerUnavailable(exc.message)
         return exc
     if isinstance(exc, aiohttp.ClientError | OSError):
         return DockerUnavailable(str(exc))

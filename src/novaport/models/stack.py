@@ -2,8 +2,10 @@
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from novaport.db import Base
@@ -93,6 +95,11 @@ class Stack(Base):
     config_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Service specs as the last successful deploy left them, keyed by service name (Swarm only).
+    deployed_spec: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # Differences between the running services and deployed_spec; empty when in sync.
+    drift: Mapped[list[str] | None] = mapped_column(JSONB)
+    drift_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_good_revision_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("revisions.id", ondelete="SET NULL", use_alter=True)
     )
@@ -143,6 +150,7 @@ class Deployment(Base):
     triggered_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    approval_notified: Mapped[bool] = mapped_column(default=False, server_default="false")
     approved_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

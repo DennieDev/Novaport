@@ -57,6 +57,22 @@ Updates are commits or pull requests like any other change, so the stack's deplo
 what happens next. Credentials for private registries go under Registries; Novaport also uses
 them to check images before a deploy and passes them to Swarm.
 
+## Notifications and drift
+
+Under Notifications, send deploy results, approval requests, image updates, drift, and node or
+agent outages to a webhook, Slack, or email. Email needs an SMTP server:
+
+```sh
+NOVAPORT_SMTP_HOST=smtp.example.com
+NOVAPORT_SMTP_PORT=587
+NOVAPORT_SMTP_USERNAME=novaport
+NOVAPORT_SMTP_PASSWORD=...        # or the novaport_smtp_password Swarm secret
+NOVAPORT_SMTP_FROM=novaport@example.com
+```
+
+After each deploy Novaport remembers how the Swarm services looked and flags a stack as drifted
+when someone changes them by hand. Deploying again puts them back.
+
 ## Login and roles
 
 The first admin logs in with a password. Add an OpenID Connect provider under Access → Login

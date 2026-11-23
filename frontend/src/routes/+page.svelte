@@ -12,6 +12,7 @@
 		ImageCheck,
 		Node,
 		ServiceSummary,
+		Stack,
 		SystemInfo,
 		Task
 	} from '#lib/types.ts';
@@ -30,6 +31,8 @@
 	);
 
 	const updates = poll<ImageCheck[]>(() => '/updates', 60_000);
+	const stacks = poll<Stack[]>(() => '/stacks', 60_000);
+	const drifted = $derived((stacks.data ?? []).filter((s) => s.drift?.length));
 	const pendingUpdates = $derived(
 		(updates.data ?? []).filter((c) => c.status === 'available' && c.action_taken !== 'committed')
 	);
@@ -83,6 +86,20 @@
 	<table>
 		<tbody>
 			{#each waiting as d (d.id)}<DeploymentRow {d} showStack />{/each}
+		</tbody>
+	</table>
+{/if}
+
+{#if drifted.length}
+	<h2>Drifted stacks</h2>
+	<table>
+		<tbody>
+			{#each drifted as s (s.id)}
+				<tr>
+					<td><a href="/stacks/{s.id}">{s.name}</a></td>
+					<td class="muted">{s.drift?.[0]}{(s.drift?.length ?? 0) > 1 ? ` and ${(s.drift?.length ?? 0) - 1} more` : ''}</td>
+				</tr>
+			{/each}
 		</tbody>
 	</table>
 {/if}

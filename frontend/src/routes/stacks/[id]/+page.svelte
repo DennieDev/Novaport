@@ -101,6 +101,19 @@
 		</dl>
 	</div>
 
+	{#if s.drift?.length}
+		<div class="panel drift">
+			<strong>Drifted from the last deploy</strong>
+			<span class="muted">
+				· checked {ago(s.drift_checked_at)}. Someone changed the running services outside
+				Novaport. Deploying again restores what git says.
+			</span>
+			<ul>
+				{#each s.drift as line (line)}<li><code>{line}</code></li>{/each}
+			</ul>
+		</div>
+	{/if}
+
 	<p class="actions">
 		{#if can('operator', s.id)}
 			<button onclick={() => deploy()} disabled={busy || !s.latest_revision || !!s.removed_at}>
@@ -171,6 +184,14 @@
 {/if}
 
 <style>
+	.drift {
+		border-color: var(--warn);
+		margin-top: 1rem;
+	}
+	.drift ul {
+		margin: 0.5rem 0 0;
+		padding-left: 1.2rem;
+	}
 	.actions {
 		display: flex;
 		gap: 1rem;
