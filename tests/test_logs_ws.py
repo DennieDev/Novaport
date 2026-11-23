@@ -22,7 +22,7 @@ async def _truncate(url: str) -> None:
     engine = create_async_engine(url)
     try:
         async with engine.begin() as conn:
-            await conn.execute(text("TRUNCATE users, sessions CASCADE"))
+            await conn.execute(text("TRUNCATE users, sessions, repositories CASCADE"))
     finally:
         await engine.dispose()
 

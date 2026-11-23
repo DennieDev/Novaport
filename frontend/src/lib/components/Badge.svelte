@@ -2,9 +2,9 @@
 <script lang="ts">
 	let { value, tone }: { value: string; tone?: 'ok' | 'warn' | 'bad' | 'muted' } = $props();
 
-	const good = ['running', 'ready', 'active', 'complete', 'completed', 'reachable', 'updated'];
+	const good = ['succeeded', 'running', 'ready', 'active', 'complete', 'completed', 'reachable', 'updated'];
 	const bad = ['failed', 'rejected', 'down', 'unreachable', 'orphaned', 'paused', 'rollback_paused'];
-	const muted = ['shutdown', 'drain', 'inactive', 'remove'];
+	const muted = ['cancelled', 'shutdown', 'drain', 'inactive', 'remove'];
 
 	const resolved = $derived(
 		tone ??

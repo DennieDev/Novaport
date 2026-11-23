@@ -12,6 +12,7 @@ from novaport import __version__
 from novaport.auth.passwords import WeakPassword
 from novaport.auth.users import UserExists, create_admin
 from novaport.config import get_settings
+from novaport.crypto import generate_key
 from novaport.db import create_engine
 from novaport.migrate import upgrade
 
@@ -79,6 +80,11 @@ def _create_admin_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _generate_key(_: argparse.Namespace) -> int:
+    print(generate_key())
+    return 0
+
+
 def _version(_: argparse.Namespace) -> int:
     print(__version__)
     return 0
@@ -109,6 +115,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--password-stdin", action="store_true", help="read the password from standard input"
     )
     admin.set_defaults(func=_create_admin_command)
+
+    key = sub.add_parser("generate-key", help="print a new value for NOVAPORT_SECRET_KEY")
+    key.set_defaults(func=_generate_key)
 
     version = sub.add_parser("version", help="print the version")
     version.set_defaults(func=_version)

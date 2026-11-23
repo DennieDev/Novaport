@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+	import { page } from '$app/state';
 	import Badge from '#lib/components/Badge.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago, degraded, replicas } from '#lib/format.ts';
@@ -7,7 +8,7 @@
 	import type { ServiceSummary } from '#lib/types.ts';
 
 	const services = poll<ServiceSummary[]>(() => '/services');
-	let filter = $state('');
+	let filter = $state(page.url.searchParams.get('stack') ?? '');
 
 	const visible = $derived(
 		(services.data ?? []).filter((s) => {

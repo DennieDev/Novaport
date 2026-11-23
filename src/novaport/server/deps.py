@@ -61,3 +61,12 @@ def get_reader(conn: HTTPConnection) -> ClusterReader:
 
 
 Reader = Annotated[ClusterReader, Depends(get_reader)]
+
+
+async def require_admin(user: CurrentUser) -> User:
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admins only.")
+    return user
+
+
+AdminUser = Annotated[User, Depends(require_admin)]

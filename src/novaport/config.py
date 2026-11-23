@@ -46,6 +46,19 @@ class Settings(BaseSettings):
     session_max_age: timedelta = timedelta(days=7)
     session_cookie: str = "novaport_session"
 
+    # Encrypts git and registry credentials in the database. Generate one with
+    # `novaport generate-key`. Without it, repositories can only use public URLs.
+    secret_key: SecretStr | None = None
+    # Git checkouts and SSH known_hosts live here.
+    data_dir: Path = Path("/var/lib/novaport")
+    # Set to false to run the API without the git poller and deploy worker.
+    background_jobs: bool = True
+    # Allow file:// and plain-path repository URLs. Off by default, since they read the
+    # server's own filesystem.
+    allow_local_repositories: bool = False
+    deploy_timeout: timedelta = timedelta(minutes=5)
+    command_timeout: timedelta = timedelta(minutes=2)
+
     agent_port: int = 9001
     agent_token: SecretStr | None = None
 

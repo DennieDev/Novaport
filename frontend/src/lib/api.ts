@@ -38,8 +38,14 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
 	get: <T>(path: string) => request<T>('GET', path),
-	post: <T>(path: string, body?: unknown) => request<T>('POST', path, body)
+	post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
+	patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
+	delete: (path: string) => request<void>('DELETE', path)
 };
+
+export function errorMessage(e: unknown): string {
+	return e instanceof Error ? e.message : String(e);
+}
 
 export function websocketUrl(path: string): string {
 	const scheme = location.protocol === 'https:' ? 'wss' : 'ws';

@@ -156,7 +156,9 @@ INFO: Obj = {
 
 class FakeReader:
     def __init__(self) -> None:
-        self.service_list = [SERVICE_WEB, SERVICE_AGENT]
+        self.service_list: list[Obj] = [SERVICE_WEB, SERVICE_AGENT]
+        self.container_list: list[Obj] = []
+        self.task_list: list[Obj] = TASKS
         self.log_chunks = ["line one\nline two\n", "line three\n"]
         self.error: Exception | None = None
 
@@ -172,9 +174,17 @@ class FakeReader:
         self._check()
         return [NODE_WORKER, NODE_MANAGER]
 
-    async def services(self) -> list[Obj]:
+    async def services(self, label: str | None = None) -> list[Obj]:
         self._check()
-        return self.service_list
+        if label is None:
+            return self.service_list
+        key, _, value = label.partition("=")
+        return [s for s in self.service_list if s["Spec"].get("Labels", {}).get(key) == value]
+
+    async def containers(self, label: str) -> list[Obj]:
+        self._check()
+        key, _, value = label.partition("=")
+        return [c for c in self.container_list if c.get("Labels", {}).get(key) == value]
 
     async def service(self, service_id: str) -> Obj:
         self._check()
@@ -185,7 +195,7 @@ class FakeReader:
 
     async def tasks(self, service_id: str | None = None) -> list[Obj]:
         self._check()
-        return TASKS
+        return self.task_list
 
     async def networks(self) -> list[Obj]:
         self._check()

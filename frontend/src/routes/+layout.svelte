@@ -10,11 +10,13 @@
 
 	const links = [
 		{ href: '/', label: 'Overview' },
+		{ href: '/stacks', label: 'Stacks' },
 		{ href: '/services', label: 'Services' },
 		{ href: '/nodes', label: 'Nodes' },
 		{ href: '/networks', label: 'Networks' },
 		{ href: '/secrets', label: 'Secrets' },
-		{ href: '/configs', label: 'Configs' }
+		{ href: '/configs', label: 'Configs' },
+		{ href: '/repositories', label: 'Repositories' }
 	];
 
 	const isLogin = $derived(page.url.pathname === '/login');

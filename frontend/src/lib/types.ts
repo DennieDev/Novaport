@@ -126,3 +126,82 @@ export interface SwarmObject {
 	created_at: string;
 	updated_at: string;
 }
+
+export type DeployMode = 'auto' | 'approve' | 'manual';
+export type DeploymentStatus =
+	| 'pending'
+	| 'awaiting_approval'
+	| 'running'
+	| 'succeeded'
+	| 'failed'
+	| 'cancelled';
+
+export interface Repository {
+	id: string;
+	name: string;
+	url: string;
+	branch: string;
+	stacks_root: string;
+	auth: 'none' | 'ssh' | 'token';
+	ssh_public_key: string | null;
+	has_token: boolean;
+	webhook_path: string;
+	webhook_secret: string;
+	poll_interval: number;
+	default_deploy_mode: DeployMode;
+	created_at: string;
+	last_synced_at: string | null;
+	last_commit: string | null;
+	last_error: string | null;
+	stack_count: number;
+}
+
+export interface SyncResult {
+	commit: string | null;
+	new_revisions: number;
+	queued_deployments: number;
+	skipped: boolean;
+	error: string | null;
+}
+
+export interface Revision {
+	id: string;
+	commit: string;
+	tree: string;
+	message: string;
+	author: string;
+	committed_at: string;
+	created_at: string;
+}
+
+export interface Deployment {
+	id: string;
+	stack_id: string;
+	stack_name: string;
+	revision: Revision;
+	status: DeploymentStatus;
+	stage: string | null;
+	trigger: string;
+	error: string | null;
+	created_at: string;
+	started_at: string | null;
+	finished_at: string | null;
+}
+
+export interface DeploymentDetail extends Deployment {
+	events: { id: number; at: string; stage: string; level: string; message: string }[];
+}
+
+export interface Stack {
+	id: string;
+	name: string;
+	path: string;
+	repository: { id: string; name: string };
+	type: 'swarm' | 'compose';
+	deploy_mode: DeployMode;
+	config_error: string | null;
+	removed_at: string | null;
+	latest_revision: Revision | null;
+	last_good_revision: Revision | null;
+	last_deployment: Deployment | null;
+}

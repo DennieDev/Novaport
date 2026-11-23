@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+import json
 from collections.abc import AsyncIterator, Mapping
 from typing import Any, Protocol
 
@@ -23,7 +24,8 @@ class NotSwarmManager(Exception):
 class ClusterReader(Protocol):
     async def info(self) -> Obj: ...
     async def nodes(self) -> list[Obj]: ...
-    async def services(self) -> list[Obj]: ...
+    async def services(self, label: str | None = None) -> list[Obj]: ...
+    async def containers(self, label: str) -> list[Obj]: ...
     async def service(self, service_id: str) -> Obj: ...
     async def tasks(self, service_id: str | None = None) -> list[Obj]: ...
     async def networks(self) -> list[Obj]: ...
@@ -69,10 +71,17 @@ class AiodockerReader:
     async def nodes(self) -> list[Obj]:
         return await self._call(self._docker.nodes.list())
 
-    async def services(self) -> list[Obj]:
+    async def services(self, label: str | None = None) -> list[Obj]:
         # aiodocker's services.list() has no `status` flag; it gives running and desired counts.
+        params = {"status": "true"}
+        if label:
+            params["filters"] = json.dumps({"label": [label]})
+        return await self._call(self._docker._query_json("services", method="GET", params=params))
+
+    async def containers(self, label: str) -> list[Obj]:
+        params = {"all": "true", "filters": json.dumps({"label": [label]})}
         return await self._call(
-            self._docker._query_json("services", method="GET", params={"status": "true"})
+            self._docker._query_json("containers/json", method="GET", params=params)
         )
 
     async def service(self, service_id: str) -> Obj:

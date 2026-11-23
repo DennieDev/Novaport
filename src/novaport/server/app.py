@@ -13,7 +13,10 @@ from novaport import __version__
 from novaport.auth.ratelimit import LoginThrottle
 from novaport.auth.users import ensure_initial_admin
 from novaport.config import Settings, get_settings
+from novaport.crypto import Cipher
 from novaport.db import create_engine
+from novaport.deploy.cli import DockerCli, SubprocessDockerCli
+from novaport.deploy.pipeline import Pipeline
 from novaport.docker.client import (
     AiodockerReader,
     ClusterReader,
@@ -21,9 +24,11 @@ from novaport.docker.client import (
     NotFound,
     NotSwarmManager,
 )
-from novaport.server.api import auth, cluster, health
+from novaport.jobs import Jobs
+from novaport.server.api import auth, cluster, health, repositories, stacks, webhooks
 from novaport.server.origin import SameOriginMiddleware
 from novaport.server.static import SPAStaticFiles
+from novaport.stacks.sync import Syncer, mirror_for
 
 log = logging.getLogger(__name__)
 
@@ -59,7 +64,11 @@ def _connect_docker(settings: Settings) -> aiodocker.Docker | None:
         return None
 
 
-def create_app(settings: Settings | None = None, reader: ClusterReader | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    reader: ClusterReader | None = None,
+    cli: DockerCli | None = None,
+) -> FastAPI:
     settings = settings or get_settings()
 
     @asynccontextmanager
@@ -82,9 +91,29 @@ def create_app(settings: Settings | None = None, reader: ClusterReader | None = 
 
         docker = None if reader is not None else _connect_docker(settings)
         app.state.docker = reader or (AiodockerReader(docker) if docker else None)
+
+        cipher = Cipher(settings.secret_key.get_secret_value() if settings.secret_key else None)
+        syncer = Syncer(settings, engine, maker, cipher)
+        pipeline = Pipeline(
+            settings,
+            maker,
+            cli
+            or SubprocessDockerCli(settings.docker_host, settings.command_timeout.total_seconds()),
+            reader=lambda: app.state.docker,
+            mirror=lambda stack: mirror_for(settings, stack.repository),
+        )
+        app.state.cipher = cipher
+        app.state.syncer = syncer
+        app.state.pipeline = pipeline
+        app.state.webhook_tasks = set()
+        app.state.jobs = Jobs(engine, maker, syncer, pipeline) if settings.background_jobs else None
+        if app.state.jobs is not None:
+            app.state.jobs.start()
         try:
             yield
         finally:
+            if app.state.jobs is not None:
+                await app.state.jobs.stop()
             if docker is not None:
                 await docker.close()
             await engine.dispose()
@@ -106,6 +135,9 @@ def create_app(settings: Settings | None = None, reader: ClusterReader | None = 
     app.include_router(auth.router)
     app.include_router(cluster.router)
     app.include_router(cluster.ws_router)
+    app.include_router(repositories.router)
+    app.include_router(stacks.router)
+    app.include_router(webhooks.router)
 
     if settings.static_dir is not None:
         app.mount("/", SPAStaticFiles(directory=settings.static_dir, html=True), name="frontend")

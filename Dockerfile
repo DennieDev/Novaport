@@ -32,6 +32,8 @@ COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose \
     /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY --from=python /app/.venv /app/.venv
 COPY --from=frontend /src/build /app/static
+RUN mkdir -p /var/lib/novaport
+VOLUME /var/lib/novaport
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

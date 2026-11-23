@@ -1,10 +1,11 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
 	import Badge from '#lib/components/Badge.svelte';
+	import DeploymentRow from '#lib/components/DeploymentRow.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago, bytes, degraded, replicas } from '#lib/format.ts';
 	import { poll } from '#lib/poll.svelte.ts';
-	import type { Node, ServiceSummary, SystemInfo, Task } from '#lib/types.ts';
+	import type { Deployment, Node, ServiceSummary, SystemInfo, Task } from '#lib/types.ts';
 
 	const system = poll<SystemInfo>(() => '/system');
 	const isManager = $derived(system.data?.swarm.is_manager ?? false);
@@ -12,6 +13,10 @@
 	const services = poll<ServiceSummary[]>(() => '/services');
 	const nodes = poll<Node[]>(() => '/nodes');
 	const tasks = poll<Task[]>(() => '/tasks');
+	const deployments = poll<Deployment[]>(() => '/deployments?limit=10', 5000);
+	const waiting = $derived(
+		(deployments.data ?? []).filter((d) => d.status === 'awaiting_approval')
+	);
 
 	const troubled = $derived((services.data ?? []).filter(degraded));
 	const badNodes = $derived((nodes.data ?? []).filter((n) => n.state !== 'ready'));
@@ -49,6 +54,24 @@
 			</dd>
 		</dl>
 	</div>
+{/if}
+
+{#if waiting.length}
+	<h2>Waiting for approval</h2>
+	<table>
+		<tbody>
+			{#each waiting as d (d.id)}<DeploymentRow {d} showStack />{/each}
+		</tbody>
+	</table>
+{/if}
+
+{#if deployments.data?.length}
+	<h2>Recent deployments</h2>
+	<table>
+		<tbody>
+			{#each deployments.data as d (d.id)}<DeploymentRow {d} showStack />{/each}
+		</tbody>
+	</table>
 {/if}
 
 {#if isManager}

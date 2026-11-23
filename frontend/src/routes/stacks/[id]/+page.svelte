@@ -1,0 +1,140 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { api, errorMessage } from '#lib/api.ts';
+	import Badge from '#lib/components/Badge.svelte';
+	import DeploymentRow from '#lib/components/DeploymentRow.svelte';
+	import Status from '#lib/components/Status.svelte';
+	import { ago } from '#lib/format.ts';
+	import { poll } from '#lib/poll.svelte.ts';
+	import type { Deployment, Revision, Stack } from '#lib/types.ts';
+
+	const id = $derived(page.params.id ?? '');
+	const stack = poll<Stack>(() => `/stacks/${id}`, 5000);
+	const revisions = poll<Revision[]>(() => `/stacks/${id}/revisions`, 15_000);
+	const deployments = poll<Deployment[]>(() => `/stacks/${id}/deployments?limit=20`, 5000);
+
+	let error = $state<string | undefined>();
+	let busy = $state(false);
+
+	async function deploy(revision?: Revision) {
+		const s = stack.data;
+		if (!s) return;
+		const what = revision ? `revision ${revision.commit.slice(0, 10)}` : 'the latest revision';
+		if (!confirm(`Deploy ${what} of ${s.name}?`)) return;
+		busy = true;
+		error = undefined;
+		try {
+			const d = await api.post<Deployment>(`/stacks/${id}/deploy`, {
+				revision_id: revision?.id ?? null
+			});
+			await goto(`/deployments/${d.id}`);
+		} catch (e) {
+			error = errorMessage(e);
+		} finally {
+			busy = false;
+		}
+	}
+</script>
+
+<p><a href="/stacks">← Stacks</a></p>
+<Status loading={stack.loading && !stack.data} error={stack.error} />
+
+{#if stack.data}
+	{@const s = stack.data}
+	<h1>{s.name}</h1>
+
+	{#if s.removed_at}
+		<p class="error">
+			This folder was removed from git {ago(s.removed_at)}. Its services keep running until you
+			remove them.
+		</p>
+	{/if}
+	{#if s.config_error}
+		<pre class="panel error">{s.config_error}</pre>
+		<p class="muted">New revisions are ignored until novaport.yaml is fixed.</p>
+	{/if}
+
+	<div class="panel">
+		<dl class="kv">
+			<dt>Repository</dt>
+			<dd><a href="/repositories/{s.repository.id}">{s.repository.name}</a> · <code>{s.path}</code></dd>
+			<dt>Type</dt>
+			<dd>{s.type === 'swarm' ? 'Swarm stack' : 'Compose project'}</dd>
+			<dt>Deploy mode</dt>
+			<dd>{s.deploy_mode}</dd>
+			<dt>Running</dt>
+			<dd>
+				{#if s.last_good_revision}
+					<code>{s.last_good_revision.commit.slice(0, 10)}</code>
+					{s.last_good_revision.message}
+				{:else}<span class="muted">never deployed by Novaport</span>{/if}
+			</dd>
+			<dt>Latest in git</dt>
+			<dd>
+				{#if s.latest_revision}
+					<code>{s.latest_revision.commit.slice(0, 10)}</code>
+					{s.latest_revision.message}
+					<span class="muted">by {s.latest_revision.author}, {ago(s.latest_revision.committed_at)}</span>
+				{:else}–{/if}
+			</dd>
+		</dl>
+	</div>
+
+	<p class="actions">
+		<button onclick={() => deploy()} disabled={busy || !s.latest_revision || !!s.removed_at}>
+			Deploy latest
+		</button>
+		<a href="/services?stack={s.name}">Services</a>
+		{#if error}<span class="error">{error}</span>{/if}
+	</p>
+
+	<h2>Deployments</h2>
+	<table>
+		<tbody>
+			{#each deployments.data ?? [] as d (d.id)}
+				<DeploymentRow {d} />
+			{:else}
+				<tr><td class="muted">No deployments yet.</td></tr>
+			{/each}
+		</tbody>
+	</table>
+
+	<h2>Revisions</h2>
+	<table>
+		<thead>
+			<tr><th>Commit</th><th>Message</th><th>Author</th><th>Committed</th><th></th></tr>
+		</thead>
+		<tbody>
+			{#each revisions.data ?? [] as r (r.id)}
+				<tr>
+					<td><code>{r.commit.slice(0, 10)}</code></td>
+					<td>
+						{r.message}
+						{#if r.id === s.last_good_revision?.id}<Badge value="running" />{/if}
+					</td>
+					<td class="muted">{r.author}</td>
+					<td class="muted">{ago(r.committed_at)}</td>
+					<td>
+						{#if r.id !== s.last_good_revision?.id && !s.removed_at}
+							<button class="link" onclick={() => deploy(r)} disabled={busy}>deploy</button>
+						{/if}
+					</td>
+				</tr>
+			{/each}
+		</tbody>
+	</table>
+{/if}
+
+<style>
+	.actions {
+		display: flex;
+		gap: 1rem;
+		align-items: center;
+		margin-top: 1rem;
+	}
+	pre.error {
+		white-space: pre-wrap;
+	}
+</style>
