@@ -29,7 +29,7 @@ from novaport.models import (
 from novaport.process import Result
 from novaport.stacks.sync import Syncer, mirror_for
 from tests.conftest import TEST_SECRET_KEY, make_settings
-from tests.fakes import FakeReader
+from tests.fakes import FakeAgents, FakeReader
 from tests.gitrepo import COMPOSE, Repo
 
 pytestmark = pytest.mark.postgres
@@ -158,7 +158,7 @@ async def test_successful_swarm_deploy(env: Env) -> None:
     d = await env.deployment(deployment_id)
     assert d.stack.last_good_revision_id == d.revision_id
     assert d.finished_at is not None
-    assert [e.stage for e in d.events][:3] == ["resolve", "validate", "apply"]
+    assert [e.stage for e in d.events][:4] == ["resolve", "validate", "preflight", "apply"]
     assert d.events[-1].message == "All services are running."
 
 
@@ -263,3 +263,18 @@ async def test_worker_runs_pending_and_fails_orphaned(env: Env) -> None:
     assert orphan.status == DeploymentStatus.FAILED
     assert orphan.error is not None
     assert "stopped while this deployment was running" in orphan.error
+
+
+async def test_missing_bind_mount_stops_before_apply(env: Env) -> None:
+    env.origin.write(
+        "stacks/web/compose.yaml", COMPOSE + "    volumes:\n      - /srv/missing:/data\n"
+    )
+    env.origin.commit("Mount data")
+    env.pipeline.agents = lambda: FakeAgents({"node1": set()})
+    deployment_id = await env.setup()
+
+    assert await env.pipeline.run(deployment_id) == DeploymentStatus.FAILED
+    assert all(not c.startswith("apply") for c in env.cli.calls)
+    d = await env.deployment(deployment_id)
+    assert d.stage == "preflight"
+    assert d.error == "web_web: bind mount source /srv/missing does not exist on mgr-1."

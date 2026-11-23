@@ -59,8 +59,15 @@ class Settings(BaseSettings):
     deploy_timeout: timedelta = timedelta(minutes=5)
     command_timeout: timedelta = timedelta(minutes=2)
 
-    agent_port: int = 9001
+    # Shared between server and agents; agents refuse to start without it.
     agent_token: SecretStr | None = None
+    agent_port: int = 9001
+    # How the server finds agents: a Swarm DNS name that resolves to every agent task
+    # (`tasks.agent` inside the Novaport stack), or a fixed comma-separated list of URLs.
+    agent_dns: str | None = None
+    agent_urls: str | None = None
+    # Where the agent sees the host's root filesystem (mounted read-only).
+    host_root: Path = Path("/host")
 
 
 @lru_cache

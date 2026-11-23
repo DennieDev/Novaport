@@ -3,7 +3,8 @@
 	import { onDestroy, tick, untrack } from 'svelte';
 	import { api, websocketUrl } from '../api';
 
-	let { serviceId }: { serviceId: string } = $props();
+	// `source` is an API path such as /services/<id> or /tasks/<id>; logs live under it.
+	let { source }: { source: string } = $props();
 
 	const MAX_LINES = 5000;
 
@@ -25,7 +26,7 @@
 		error = undefined;
 		try {
 			const result = await api.get<{ lines: string[] }>(
-				`/services/${serviceId}/logs?tail=${tail}`
+				`${source}/logs?tail=${tail}`
 			);
 			lines = result.lines;
 			scrollToEnd();
@@ -40,7 +41,7 @@
 		partial = '';
 		error = undefined;
 		following = true;
-		socket = new WebSocket(websocketUrl(`/services/${serviceId}/logs/follow?tail=${tail}`));
+		socket = new WebSocket(websocketUrl(`${source}/logs/follow?tail=${tail}`));
 		socket.onmessage = (event: MessageEvent<string>) => {
 			const parts = (partial + event.data).split('\n');
 			partial = parts.pop() ?? '';
@@ -61,11 +62,11 @@
 		following = false;
 	}
 
-	// The parent re-polls the service, which re-evaluates this prop. Only reload when the ID
+	// The parent re-polls its data, which re-evaluates this prop. Only reload when the source
 	// actually changes, or an open log stream would be dropped every poll.
 	let loadedFor: string | undefined;
 	$effect(() => {
-		const id = serviceId;
+		const id = source;
 		if (id === loadedFor) return;
 		loadedFor = id;
 		untrack(load);

@@ -29,7 +29,7 @@
 		<tbody>
 			{#each nodes.data as n (n.id)}
 				<tr>
-					<td>{n.hostname}</td>
+					<td><a href="/nodes/{n.id}">{n.hostname}</a></td>
 					<td>
 						{n.role}
 						{#if n.leader}<Badge value="leader" tone="ok" />{/if}

@@ -14,7 +14,7 @@
 	let error = $state<string | undefined>();
 	let busy = $state(false);
 
-	const stages = ['resolve', 'validate', 'apply', 'converge'];
+	const stages = ['resolve', 'validate', 'preflight', 'apply', 'converge'];
 
 	function stageState(d: DeploymentDetail, stage: string): string {
 		const current = d.stage ? stages.indexOf(d.stage) : -1;
@@ -97,7 +97,9 @@
 				<tr>
 					<td class="muted nowrap">{new Date(e.at).toLocaleTimeString()}</td>
 					<td class="muted">{e.stage}</td>
-					<td class:error={e.level === 'error'}><pre>{e.message}</pre></td>
+					<td class:error={e.level === 'error'} class:warning={e.level === 'warning'}>
+						<pre>{e.message}</pre>
+					</td>
 				</tr>
 			{:else}
 				<tr><td class="muted">Nothing yet.</td></tr>
@@ -146,6 +148,9 @@
 		margin: 0;
 		white-space: pre-wrap;
 		word-break: break-word;
+	}
+	td.warning {
+		color: var(--warn);
 	}
 	pre.failure {
 		color: var(--bad);

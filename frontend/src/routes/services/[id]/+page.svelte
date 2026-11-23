@@ -116,6 +116,7 @@
 				<th>Desired</th>
 				<th>Message</th>
 				<th>Updated</th>
+				<th></th>
 			</tr>
 		</thead>
 		<tbody>
@@ -132,15 +133,21 @@
 						</span>
 					</td>
 					<td class="muted">{ago(t.updated_at)}</td>
+					<td class="nowrap">
+						{#if t.container_id}
+							<a href="/tasks/{t.id}">logs</a>
+							{#if t.state === 'running'}· <a href="/tasks/{t.id}/terminal">terminal</a>{/if}
+						{/if}
+					</td>
 				</tr>
 			{:else}
-				<tr><td colspan="6" class="muted">No tasks.</td></tr>
+				<tr><td colspan="7" class="muted">No tasks.</td></tr>
 			{/each}
 		</tbody>
 	</table>
 
 	<h2>Logs</h2>
-	<LogViewer serviceId={s.id} />
+	<LogViewer source={`/services/${s.id}`} />
 
 	<h2>
 		Environment
@@ -177,6 +184,9 @@
 		font-size: 0.85rem;
 		font-weight: 400;
 		margin-left: 0.75rem;
+	}
+	.nowrap {
+		white-space: nowrap;
 	}
 	tr.failed td {
 		background: color-mix(in srgb, var(--bad) 6%, transparent);

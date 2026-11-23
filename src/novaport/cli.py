@@ -14,12 +14,13 @@ from novaport.auth.users import UserExists, create_admin
 from novaport.config import get_settings
 from novaport.crypto import generate_key
 from novaport.db import create_engine
-from novaport.migrate import upgrade
+from novaport.migrate import upgrade, wait_for_database
 
 
 def _server(args: argparse.Namespace) -> int:
     settings = get_settings()
     if settings.migrate_on_start and not args.no_migrate:
+        wait_for_database(settings.database_url.get_secret_value())
         upgrade(settings.database_url.get_secret_value())
     uvicorn.run(
         "novaport.server.app:create_app",

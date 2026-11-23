@@ -10,6 +10,16 @@ definition.
 
 See [docs/design.md](docs/design.md) for the design.
 
+## Running on Docker Swarm
+
+[deploy/stack.yml](deploy/stack.yml) runs the server, an agent on every node, and Postgres. The
+comments at the top list the secrets to create first.
+
+The agent mounts the Docker socket and the host filesystem read-only. It answers only to the
+server (shared token, encrypted overlay network) and gives Novaport what a manager can't see on
+its own: container logs and terminals on every node, bind mount checks before a deploy, and
+per-node disk, image, and volume details.
+
 ## Development
 
 Requirements: [uv](https://docs.astral.sh/uv/), Docker, and Node.js 22+ for the frontend.

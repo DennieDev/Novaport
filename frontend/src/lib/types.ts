@@ -205,3 +205,50 @@ export interface Stack {
 	last_good_revision: Revision | null;
 	last_deployment: Deployment | null;
 }
+
+export interface AgentStatus {
+	enabled: boolean;
+	agents: {
+		url: string;
+		node_id: string | null;
+		hostname: string | null;
+		version: string | null;
+		error: string | null;
+	}[];
+}
+
+interface Usage {
+	count: number;
+	size: number;
+}
+
+export interface DiskUsage {
+	filesystem: { total: number; used: number; free: number } | null;
+	images: Usage;
+	containers: Usage;
+	volumes: Usage;
+	build_cache: Usage;
+}
+
+export interface NodeImage {
+	id: string;
+	tags: string[];
+	size: number;
+	created: number;
+	containers: number;
+}
+
+export interface NodeVolume {
+	name: string;
+	driver: string;
+	mountpoint: string;
+	size: number | null;
+	containers: number | null;
+	labels: Record<string, string>;
+}
+
+export interface VolumeFiles {
+	path: string;
+	entries: { name: string; kind: string; size: number; modified: number }[];
+	truncated: boolean;
+}

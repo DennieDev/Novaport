@@ -7,10 +7,12 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
+import yaml
 from dotenv import dotenv_values
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from novaport.agents.pool import Agents
 from novaport.config import Settings
 from novaport.deploy.cli import DockerCli
 from novaport.deploy.compose import (
@@ -21,6 +23,7 @@ from novaport.deploy.compose import (
     add_labels,
 )
 from novaport.deploy.converge import converge_swarm
+from novaport.deploy.preflight import preflight
 from novaport.docker.client import ClusterReader
 from novaport.git import GitError, GitMirror
 from novaport.models import Deployment, DeploymentEvent, DeploymentStatus, Stack, StackType
@@ -46,12 +49,14 @@ class Pipeline:
         cli: DockerCli,
         reader: Callable[[], ClusterReader | None],
         mirror: Callable[[Stack], GitMirror],
+        agents: Callable[[], Agents | None] = lambda: None,
     ) -> None:
         self.settings = settings
         self.sessionmaker = sessionmaker
         self.cli = cli
         self.reader = reader
         self.mirror = mirror
+        self.agents = agents
 
     async def run(self, deployment_id: uuid.UUID) -> DeploymentStatus:
         async with self.sessionmaker() as db:
@@ -166,6 +171,8 @@ class Pipeline:
                 raise DeployFailed("validate", str(exc)) from exc
             (folder / RENDERED_FILE).write_text(rendered)
 
+            await self._preflight(db, deployment, config.stdout)
+
             await self._event(db, deployment, "apply", "info", f"Deploying stack {stack.name}")
             started = datetime.now(UTC)
             try:
@@ -180,6 +187,25 @@ class Pipeline:
             await self._converge(db, deployment, started, timeout)
         else:
             await self._event(db, deployment, "converge", "info", "All containers are up.")
+
+    async def _preflight(self, db: AsyncSession, deployment: Deployment, normalized: str) -> None:
+        reader = self.reader()
+        if reader is None:
+            await self._event(
+                db, deployment, "preflight", "warning", "Skipped: no Docker connection."
+            )
+            return
+        await self._event(db, deployment, "preflight", "info", "Checking mounts and references")
+        stack = deployment.stack
+        report = await preflight(
+            yaml.safe_load(normalized), stack.type, stack.name, reader, self.agents()
+        )
+        for note in report.notes:
+            await self._event(db, deployment, "preflight", "info", note)
+        for warning in report.warnings:
+            await self._event(db, deployment, "preflight", "warning", warning)
+        if report.errors:
+            raise DeployFailed("preflight", "\n".join(report.errors))
 
     async def _converge(
         self, db: AsyncSession, deployment: Deployment, started: datetime, timeout: int

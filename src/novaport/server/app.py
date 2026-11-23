@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from novaport import __version__
+from novaport.agents.pool import AgentPool, Agents
 from novaport.auth.ratelimit import LoginThrottle
 from novaport.auth.users import ensure_initial_admin
 from novaport.config import Settings, get_settings
@@ -25,6 +26,7 @@ from novaport.docker.client import (
     NotSwarmManager,
 )
 from novaport.jobs import Jobs
+from novaport.server.api import agents as agents_api
 from novaport.server.api import auth, cluster, health, repositories, stacks, webhooks
 from novaport.server.origin import SameOriginMiddleware
 from novaport.server.static import SPAStaticFiles
@@ -68,6 +70,7 @@ def create_app(
     settings: Settings | None = None,
     reader: ClusterReader | None = None,
     cli: DockerCli | None = None,
+    agents: Agents | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
 
@@ -92,6 +95,9 @@ def create_app(
         docker = None if reader is not None else _connect_docker(settings)
         app.state.docker = reader or (AiodockerReader(docker) if docker else None)
 
+        pool = AgentPool(settings) if agents is None else None
+        app.state.agents = agents or pool
+
         cipher = Cipher(settings.secret_key.get_secret_value() if settings.secret_key else None)
         syncer = Syncer(settings, engine, maker, cipher)
         pipeline = Pipeline(
@@ -101,6 +107,7 @@ def create_app(
             or SubprocessDockerCli(settings.docker_host, settings.command_timeout.total_seconds()),
             reader=lambda: app.state.docker,
             mirror=lambda stack: mirror_for(settings, stack.repository),
+            agents=lambda: app.state.agents,
         )
         app.state.cipher = cipher
         app.state.syncer = syncer
@@ -114,6 +121,8 @@ def create_app(
         finally:
             if app.state.jobs is not None:
                 await app.state.jobs.stop()
+            if pool is not None:
+                await pool.close()
             if docker is not None:
                 await docker.close()
             await engine.dispose()
@@ -130,6 +139,7 @@ def create_app(
     app.state.login_throttle = LoginThrottle()
     app.add_middleware(SameOriginMiddleware)
     _install_error_handlers(app)
+    agents_api.install_error_handlers(app)
 
     app.include_router(health.router)
     app.include_router(auth.router)
@@ -138,6 +148,8 @@ def create_app(
     app.include_router(repositories.router)
     app.include_router(stacks.router)
     app.include_router(webhooks.router)
+    app.include_router(agents_api.router)
+    app.include_router(agents_api.ws_router)
 
     if settings.static_dir is not None:
         app.mount("/", SPAStaticFiles(directory=settings.static_dir, html=True), name="frontend")

@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from typing import Any
 
+from novaport.agents.pool import Agent, AgentUnavailable
 from novaport.docker.client import NotFound
 
 Obj = Mapping[str, Any]
@@ -159,6 +161,9 @@ class FakeReader:
         self.service_list: list[Obj] = [SERVICE_WEB, SERVICE_AGENT]
         self.container_list: list[Obj] = []
         self.task_list: list[Obj] = TASKS
+        self.network_list: list[Obj] = NETWORKS
+        self.secret_list: list[Obj] = SECRETS
+        self.node_list: list[Obj] = [NODE_WORKER, NODE_MANAGER]
         self.log_chunks = ["line one\nline two\n", "line three\n"]
         self.error: Exception | None = None
 
@@ -172,7 +177,7 @@ class FakeReader:
 
     async def nodes(self) -> list[Obj]:
         self._check()
-        return [NODE_WORKER, NODE_MANAGER]
+        return self.node_list
 
     async def services(self, label: str | None = None) -> list[Obj]:
         self._check()
@@ -197,13 +202,20 @@ class FakeReader:
         self._check()
         return self.task_list
 
+    async def task(self, task_id: str) -> Obj:
+        self._check()
+        for t in self.task_list:
+            if t["ID"] == task_id:
+                return t
+        raise NotFound(f"task {task_id} not found")
+
     async def networks(self) -> list[Obj]:
         self._check()
-        return NETWORKS
+        return self.network_list
 
     async def secrets(self) -> list[Obj]:
         self._check()
-        return SECRETS
+        return self.secret_list
 
     async def configs(self) -> list[Obj]:
         self._check()
@@ -221,3 +233,71 @@ class FakeReader:
         await self.service(service_id)
         for chunk in self.log_chunks:
             yield chunk
+
+
+class FakeAgentSocket:
+    """Stands in for a websockets client connection to an agent."""
+
+    def __init__(self, messages: list[str | bytes]) -> None:
+        self.messages = messages
+        self.sent: list[str | bytes] = []
+        self.close_code: int | None = 1000
+        self.close_reason = ""
+
+    def __aiter__(self) -> AsyncIterator[str | bytes]:
+        return self._iterate()
+
+    async def _iterate(self) -> AsyncIterator[str | bytes]:
+        for message in self.messages:
+            yield message
+
+    async def send(self, message: str | bytes) -> None:
+        self.sent.append(message)
+
+
+class FakeAgents:
+    """Agents keyed by node ID; `paths` lists which host paths exist on each node."""
+
+    def __init__(self, paths: dict[str, set[str]] | None = None, enabled: bool = True) -> None:
+        self.paths = paths or {}
+        self._enabled = enabled
+        self.unreachable: set[str] = set()
+        self.requests: list[tuple[str, str, object]] = []
+        self.socket = FakeAgentSocket(["hello\n"])
+        self.socket_paths: list[tuple[str, str]] = []
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    async def list(self, refresh: bool = False) -> list[Agent]:
+        return [
+            Agent(
+                f"http://{n}:9001",
+                n,
+                f"host-{n}",
+                "test",
+                None if n not in self.unreachable else "down",
+            )
+            for n in self.paths
+        ]
+
+    def _reachable(self, node_id: str) -> None:
+        if node_id not in self.paths or node_id in self.unreachable:
+            raise AgentUnavailable(f"No agent is reachable on node {node_id}.")
+
+    async def get(self, node_id: str, path: str, params: dict[str, Any] | None = None) -> Any:
+        self._reachable(node_id)
+        self.requests.append((node_id, path, params))
+        return {"node": node_id, "path": path, "params": params}
+
+    async def post(self, node_id: str, path: str, body: Any) -> Any:
+        self._reachable(node_id)
+        self.requests.append((node_id, path, body))
+        return [{"path": p, "exists": p in self.paths[node_id]} for p in body["paths"]]
+
+    @asynccontextmanager
+    async def websocket(self, node_id: str, path: str) -> AsyncIterator[FakeAgentSocket]:
+        self._reachable(node_id)
+        self.socket_paths.append((node_id, path))
+        yield self.socket
