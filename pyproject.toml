@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/DennieDev/novaport"
+Repository = "https://github.com/DennieDev/NovaPort"
 
 [project.scripts]
 novaport = "novaport.cli:main"
