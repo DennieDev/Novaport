@@ -2,9 +2,9 @@
 <script lang="ts">
 	let { value, tone }: { value: string; tone?: 'ok' | 'warn' | 'bad' | 'muted' } = $props();
 
-	const good = ['succeeded', 'success', 'running', 'ready', 'active', 'complete', 'completed', 'reachable', 'updated'];
-	const bad = ['failed', 'denied', 'rejected', 'down', 'unreachable', 'orphaned', 'paused', 'rollback_paused'];
-	const muted = ['cancelled', 'shutdown', 'drain', 'inactive', 'remove'];
+	const good = ['succeeded', 'success', 'running', 'ready', 'active', 'complete', 'completed', 'reachable', 'updated', 'healthy'];
+	const bad = ['failed', 'denied', 'rejected', 'down', 'unreachable', 'orphaned', 'paused', 'rollback_paused', 'exited', 'dead', 'unhealthy'];
+	const muted = ['cancelled', 'shutdown', 'drain', 'inactive', 'remove', 'created'];
 
 	const resolved = $derived(
 		tone ??
@@ -22,23 +22,35 @@
 
 <style>
 	.badge {
-		display: inline-block;
-		padding: 0.05rem 0.45rem;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.08rem 0.5rem;
 		border-radius: 999px;
-		font-size: 0.8rem;
+		font-size: 0.78rem;
+		font-weight: 500;
+		line-height: 1.5;
 		white-space: nowrap;
-		border: 1px solid currentColor;
+		color: var(--tone);
+		background: color-mix(in srgb, var(--tone) 12%, transparent);
+	}
+	.badge::before {
+		content: '';
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: currentColor;
 	}
 	.ok {
-		color: var(--ok);
+		--tone: var(--ok);
 	}
 	.warn {
-		color: var(--warn);
+		--tone: var(--warn);
 	}
 	.bad {
-		color: var(--bad);
+		--tone: var(--bad);
 	}
 	.muted {
-		color: var(--muted);
+		--tone: var(--muted);
 	}
 </style>

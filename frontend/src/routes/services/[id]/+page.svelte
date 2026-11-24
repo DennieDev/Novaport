@@ -42,7 +42,7 @@
 	);
 </script>
 
-<p><a href="/services">← Services</a></p>
+<p class="crumbs"><a href="/services">← Services</a></p>
 <Status loading={service.loading && !service.data} error={service.error} />
 
 {#if service.data}

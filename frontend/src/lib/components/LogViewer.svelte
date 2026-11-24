@@ -99,19 +99,21 @@
 		display: flex;
 		gap: 0.6rem;
 		align-items: center;
-		margin-bottom: 0.5rem;
+		margin-bottom: 0.75rem;
 	}
 	select {
 		font: inherit;
 		margin-left: 0.3rem;
 	}
 	pre {
-		background: var(--code);
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		padding: 0.75rem;
+		background: #0c0d10;
+		color: #d6d8df;
+		border-radius: var(--radius);
+		padding: 0.75rem 0.9rem;
 		margin: 0;
-		max-height: 32rem;
+		line-height: 1.55;
+		height: 60vh;
+		min-height: 18rem;
 		overflow: auto;
 		white-space: pre-wrap;
 		word-break: break-all;

@@ -44,7 +44,7 @@
 			{#each stacks.data as s (s.id)}
 				<tr class:removed={s.removed_at}>
 					<td>
-						<a href="/stacks/{s.id}">{s.name}</a>
+						<a class="name" href="/stacks/{s.id}">{s.name}</a>
 						{#if s.removed_at}<Badge value="removed from git" tone="muted" />{/if}
 						{#if s.config_error}<Badge value="settings error" tone="bad" />{/if}
 					</td>
@@ -80,6 +80,9 @@
 {/if}
 
 <style>
+	.name {
+		font-weight: 600;
+	}
 	tr.removed td {
 		opacity: 0.6;
 	}

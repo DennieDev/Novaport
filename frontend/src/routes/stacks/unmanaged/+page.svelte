@@ -71,7 +71,7 @@
 	}
 </script>
 
-<p><a href="/stacks">← Stacks</a></p>
+<p class="crumbs"><a href="/stacks">← Stacks</a></p>
 <h1>Deployed without Novaport</h1>
 <p class="muted">
 	These Swarm stacks and Compose projects run on your hosts, but no repository describes them.

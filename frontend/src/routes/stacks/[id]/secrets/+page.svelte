@@ -84,7 +84,7 @@
 	const shown = $derived([...new Set([...keys, ...Object.keys(edits)])].sort());
 </script>
 
-<p><a href="/stacks/{id}">← {stack?.name ?? 'Stack'}</a></p>
+<p class="crumbs"><a href="/stacks/{id}">← {stack?.name ?? 'Stack'}</a></p>
 <h1>Secrets{stack ? ` for ${stack.name}` : ''}</h1>
 
 {#if sops && !sops.available}

@@ -44,7 +44,7 @@
 	const percent = (used: number, total: number) => (total ? Math.round((used / total) * 100) : 0);
 </script>
 
-<p><a href="/nodes">← Nodes</a></p>
+<p class="crumbs"><a href="/nodes">← Nodes</a></p>
 
 {#if node}
 	<h1>

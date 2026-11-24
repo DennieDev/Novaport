@@ -3,39 +3,85 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import favicon from '#lib/assets/favicon.svg';
+	import Icon, { type IconName } from '#lib/components/Icon.svelte';
+	import { live, subscribe } from '#lib/live.svelte.ts';
 	import { can, loadSession, logOut, session } from '#lib/session.svelte.ts';
+	import '#lib/styles.css';
 	import type { Role } from '#lib/types.ts';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
 
-	// `role: null` means any logged-in user; pages filter to the stacks they may see.
-	const links: { href: string; label: string; role: Role | null }[] = [
-		{ href: '/', label: 'Overview', role: null },
-		{ href: '/stacks', label: 'Stacks', role: null },
-		{ href: '/services', label: 'Services', role: null },
-		{ href: '/nodes', label: 'Nodes', role: 'viewer' },
-		{ href: '/networks', label: 'Networks', role: 'viewer' },
-		{ href: '/secrets', label: 'Secrets', role: 'viewer' },
-		{ href: '/configs', label: 'Configs', role: 'viewer' },
-		{ href: '/endpoints', label: 'Endpoints', role: 'viewer' },
-		{ href: '/repositories', label: 'Repositories', role: 'admin' },
-		{ href: '/registries', label: 'Registries', role: 'admin' },
-		{ href: '/notifications', label: 'Notifications', role: 'admin' },
-		{ href: '/access', label: 'Access', role: 'admin' },
-		{ href: '/audit', label: 'Audit log', role: 'admin' }
+	interface Link {
+		href: string;
+		label: string;
+		icon: IconName;
+		// null means any logged-in user; pages filter to the stacks they may see.
+		role: Role | null;
+	}
+
+	const groups: { title: string | null; links: Link[] }[] = [
+		{
+			title: null,
+			links: [
+				{ href: '/', label: 'Overview', icon: 'overview', role: null },
+				{ href: '/stacks', label: 'Stacks', icon: 'stacks', role: null },
+				{ href: '/services', label: 'Services', icon: 'services', role: null }
+			]
+		},
+		{
+			title: 'Cluster',
+			links: [
+				{ href: '/nodes', label: 'Nodes', icon: 'nodes', role: 'viewer' },
+				{ href: '/networks', label: 'Networks', icon: 'networks', role: 'viewer' },
+				{ href: '/secrets', label: 'Secrets', icon: 'secrets', role: 'viewer' },
+				{ href: '/configs', label: 'Configs', icon: 'configs', role: 'viewer' },
+				{ href: '/endpoints', label: 'Endpoints', icon: 'endpoints', role: 'viewer' }
+			]
+		},
+		{
+			title: 'Sources',
+			links: [
+				{ href: '/repositories', label: 'Repositories', icon: 'repositories', role: 'admin' },
+				{ href: '/registries', label: 'Registries', icon: 'registries', role: 'admin' }
+			]
+		},
+		{
+			title: 'Settings',
+			links: [
+				{ href: '/notifications', label: 'Notifications', icon: 'notifications', role: 'admin' },
+				{ href: '/access', label: 'Access', icon: 'access', role: 'admin' },
+				{ href: '/audit', label: 'Audit log', icon: 'audit', role: 'admin' }
+			]
+		}
 	];
-	const visibleLinks = $derived(
-		session.user ? links.filter((l) => l.role === null || can(l.role)) : []
+
+	const visibleGroups = $derived(
+		session.user
+			? groups
+					.map((g) => ({ ...g, links: g.links.filter((l) => l.role === null || can(l.role)) }))
+					.filter((g) => g.links.length > 0)
+			: []
 	);
 
 	const isLogin = $derived(page.url.pathname === '/login');
+	let menuOpen = $state(false);
 
 	$effect(() => {
 		if (isLogin || session.checked) return;
 		loadSession().then((user) => {
 			if (!user) goto(`/login?next=${encodeURIComponent(page.url.pathname)}`);
 		});
+	});
+
+	$effect(() => {
+		page.url.pathname;
+		menuOpen = false;
+	});
+
+	// Keeps the tab's event stream open, so the indicator shows its real state on every page.
+	$effect(() => {
+		if (session.user) return subscribe(() => {});
 	});
 
 	function active(href: string): boolean {
@@ -58,17 +104,47 @@
 	{@render children()}
 {:else if session.user}
 	<div class="shell">
-		<nav>
-			<a class="brand" href="/">Novaport</a>
-			{#each visibleLinks as link (link.href)}
-				<a href={link.href} class:active={active(link.href)}>{link.label}</a>
-			{/each}
-			<div class="spacer"></div>
-			<span class="muted" title={session.user.global_role ?? 'no global role'}>
-				{session.user.name ?? session.user.username}
-			</span>
-			<button class="link" onclick={signOut}>Log out</button>
-		</nav>
+		<header class="topbar">
+			<button class="menu" aria-label="Menu" onclick={() => (menuOpen = !menuOpen)}>
+				<Icon name="menu" size={18} />
+			</button>
+			<a class="brand" href="/"><img src={favicon} alt="" width="20" height="20" />Novaport</a>
+		</header>
+
+		<aside class:open={menuOpen}>
+			<a class="brand" href="/"><img src={favicon} alt="" width="22" height="22" />Novaport</a>
+			<nav>
+				{#each visibleGroups as group (group.title)}
+					{#if group.title}<div class="group">{group.title}</div>{/if}
+					{#each group.links as link (link.href)}
+						<a href={link.href} class:active={active(link.href)}>
+							<Icon name={link.icon} />
+							{link.label}
+						</a>
+					{/each}
+				{/each}
+			</nav>
+			<div class="account">
+				<div class="who">
+					<span class="name">{session.user.name ?? session.user.username}</span>
+					<span class="role">
+						{session.user.global_role ?? 'stack roles'}
+						<span
+							class="live"
+							class:on={live.connected}
+							title={live.connected ? 'Live updates connected' : 'Live updates offline'}
+						></span>
+					</span>
+				</div>
+				<button class="small" onclick={signOut} title="Log out">
+					<Icon name="logout" size={14} />
+				</button>
+			</div>
+		</aside>
+		{#if menuOpen}
+			<button class="scrim" aria-label="Close menu" onclick={() => (menuOpen = false)}></button>
+		{/if}
+
 		<main>
 			{@render children()}
 		</main>
@@ -76,174 +152,154 @@
 {/if}
 
 <style>
-	:global {
-		:root {
-			--bg: #fbfbfc;
-			--fg: #1c1d21;
-			--panel: #ffffff;
-			--border: #e1e3e8;
-			--muted: #6b7080;
-			--accent: #4b5bd6;
-			--ok: #1d8a4e;
-			--warn: #b26b00;
-			--bad: #c4302b;
-			--code: #f2f3f6;
-			color-scheme: light dark;
-		}
-		@media (prefers-color-scheme: dark) {
-			:root {
-				--bg: #15161a;
-				--fg: #e4e5ea;
-				--panel: #1c1d22;
-				--border: #2d2f36;
-				--muted: #8d92a3;
-				--accent: #8f9cff;
-				--ok: #4cc98a;
-				--warn: #e0a640;
-				--bad: #f06a64;
-				--code: #23252b;
-			}
-		}
-		* {
-			box-sizing: border-box;
-		}
-		body {
-			margin: 0;
-			background: var(--bg);
-			color: var(--fg);
-			font:
-				14px/1.5 system-ui,
-				sans-serif;
-		}
-		a {
-			color: var(--accent);
-			text-decoration: none;
-		}
-		a:hover {
-			text-decoration: underline;
-		}
-		h1 {
-			font-size: 1.4rem;
-			margin: 0 0 1rem;
-		}
-		h2 {
-			font-size: 1.05rem;
-			margin: 1.75rem 0 0.6rem;
-		}
-		table {
-			width: 100%;
-			border-collapse: collapse;
-			background: var(--panel);
-			border: 1px solid var(--border);
-		}
-		th,
-		td {
-			text-align: left;
-			padding: 0.45rem 0.7rem;
-			border-bottom: 1px solid var(--border);
-			vertical-align: top;
-		}
-		th {
-			font-weight: 600;
-			color: var(--muted);
-			font-size: 0.8rem;
-			text-transform: uppercase;
-			letter-spacing: 0.03em;
-		}
-		code,
-		pre {
-			font-family: ui-monospace, monospace;
-			font-size: 0.85rem;
-		}
-		code {
-			background: var(--code);
-			padding: 0.05rem 0.3rem;
-			border-radius: 4px;
-		}
-		.muted {
-			color: var(--muted);
-		}
-		.error {
-			color: var(--bad);
-		}
-		.panel {
-			background: var(--panel);
-			border: 1px solid var(--border);
-			border-radius: 6px;
-			padding: 1rem;
-		}
-		dl.kv {
-			display: grid;
-			grid-template-columns: max-content 1fr;
-			gap: 0.3rem 1.25rem;
-			margin: 0;
-		}
-		dl.kv dt {
-			color: var(--muted);
-		}
-		dl.kv dd {
-			margin: 0;
-		}
-		button {
-			font: inherit;
-			padding: 0.35rem 0.8rem;
-			border: 1px solid var(--border);
-			background: var(--panel);
-			color: var(--fg);
-			border-radius: 5px;
-			cursor: pointer;
-		}
-		button.link {
-			border: none;
-			background: none;
-			color: var(--accent);
-			padding: 0;
-		}
-		select {
-			font: inherit;
-			padding: 0.35rem;
-			border: 1px solid var(--border);
-			background: var(--panel);
-			color: var(--fg);
-			border-radius: 5px;
-		}
-		input {
-			font: inherit;
-			padding: 0.4rem 0.6rem;
-			border: 1px solid var(--border);
-			background: var(--panel);
-			color: var(--fg);
-			border-radius: 5px;
-		}
-	}
-
 	.shell {
 		min-height: 100vh;
 	}
-	nav {
+	aside {
+		position: fixed;
+		inset: 0 auto 0 0;
+		width: 232px;
 		display: flex;
-		align-items: center;
-		gap: 1.1rem;
-		padding: 0.7rem 1.5rem;
-		border-bottom: 1px solid var(--border);
-		background: var(--panel);
-	}
-	nav a {
-		color: var(--fg);
-	}
-	nav a.active {
-		color: var(--accent);
-		font-weight: 600;
+		flex-direction: column;
+		background: var(--sidebar);
+		border-right: 1px solid var(--border);
+		z-index: 20;
 	}
 	.brand {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
 		font-weight: 700;
-		margin-right: 0.75rem;
+		font-size: 1.05rem;
+		color: var(--fg);
+		letter-spacing: -0.01em;
 	}
-	.spacer {
+	aside > .brand {
+		padding: 1.1rem 1.25rem 1rem;
+	}
+	.brand:hover {
+		text-decoration: none;
+	}
+	nav {
 		flex: 1;
+		overflow-y: auto;
+		padding: 0.25rem 0.75rem 1rem;
+	}
+	.group {
+		margin: 1.1rem 0.5rem 0.35rem;
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--muted);
+	}
+	nav a {
+		display: flex;
+		align-items: center;
+		gap: 0.65rem;
+		padding: 0.42rem 0.6rem;
+		margin: 1px 0;
+		border-radius: 6px;
+		color: var(--fg);
+		font-weight: 500;
+	}
+	nav a :global(svg) {
+		color: var(--muted);
+	}
+	nav a:hover {
+		background: var(--panel-alt);
+		text-decoration: none;
+	}
+	nav a.active {
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+	nav a.active :global(svg) {
+		color: var(--accent);
+	}
+	.account {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.85rem 1rem;
+		border-top: 1px solid var(--border);
+	}
+	.who {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.name {
+		font-weight: 600;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.role {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
+	.live {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--border-strong);
+	}
+	.live.on {
+		background: var(--ok);
 	}
 	main {
-		padding: 1.5rem;
-		max-width: 1400px;
+		margin-left: 232px;
+		padding: 1.75rem 2rem 3rem;
+		max-width: calc(1360px + 232px);
+	}
+	.topbar {
+		display: none;
+	}
+	.scrim {
+		display: none;
+	}
+
+	@media (max-width: 900px) {
+		.topbar {
+			position: sticky;
+			top: 0;
+			z-index: 10;
+			display: flex;
+			align-items: center;
+			gap: 0.75rem;
+			padding: 0.6rem 1rem;
+			background: var(--sidebar);
+			border-bottom: 1px solid var(--border);
+		}
+		.menu {
+			padding: 0.3rem;
+		}
+		aside {
+			transform: translateX(-100%);
+			transition: transform 0.18s ease;
+			box-shadow: 0 0 24px rgb(0 0 0 / 0.15);
+		}
+		aside.open {
+			transform: none;
+		}
+		.scrim,
+		.scrim:hover:not(:disabled) {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 15;
+			border: none;
+			border-radius: 0;
+			background: rgb(0 0 0 / 0.3);
+		}
+		main {
+			margin-left: 0;
+			padding: 1.25rem 1rem 2.5rem;
+		}
 	}
 </style>

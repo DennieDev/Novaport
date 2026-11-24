@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, ApiError } from '#lib/api.ts';
+	import logo from '#lib/assets/favicon.svg';
 	import { logIn } from '#lib/session.svelte.ts';
 	import type { ProviderLink } from '#lib/types.ts';
 
@@ -47,7 +48,13 @@
 
 <div class="wrap">
 	<div class="panel box">
-		<h1>Novaport</h1>
+		<div class="brand">
+			<img src={logo} alt="" width="36" height="36" />
+			<div>
+				<h1>Novaport</h1>
+				<p class="muted">Sign in to manage your stacks</p>
+			</div>
+		</div>
 		{#each providers as p (p.slug)}
 			<a class="provider" href={providerUrl(p)}>Log in with {p.display_name}</a>
 		{/each}
@@ -64,7 +71,9 @@
 					Password
 					<input type="password" bind:value={password} autocomplete="current-password" required />
 				</label>
-				<button type="submit" disabled={busy}>{busy ? 'Logging in…' : 'Log in'}</button>
+				<button class="primary" type="submit" disabled={busy}>
+					{busy ? 'Logging in…' : 'Log in'}
+				</button>
 			</form>
 		{/if}
 		{#if error}<p class="error">{error}</p>{/if}
@@ -89,6 +98,25 @@
 	label {
 		display: grid;
 		gap: 0.3rem;
+		font-weight: 500;
+	}
+	.box {
+		width: 360px;
+		padding: 1.75rem;
+	}
+	.brand {
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
+		margin-bottom: 0.5rem;
+	}
+	.brand h1 {
+		margin: 0;
+		font-size: 1.3rem;
+	}
+	button.primary {
+		justify-content: center;
+		padding: 0.55rem;
 	}
 	.provider {
 		display: block;

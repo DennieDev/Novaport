@@ -48,7 +48,7 @@
 
 {#if deployment.data}
 	{@const d = deployment.data}
-	<p><a href="/stacks/{d.stack_id}">← {d.stack_name}</a></p>
+	<p class="crumbs"><a href="/stacks/{d.stack_id}">← {d.stack_name}</a></p>
 	<h1>
 		Deploy {d.stack_name}
 		<Badge value={d.status.replace('_', ' ')} />

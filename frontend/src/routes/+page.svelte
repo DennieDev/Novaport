@@ -52,6 +52,40 @@
 </script>
 
 <h1>Overview</h1>
+
+<div class="tiles">
+	<a class="tile" href="/stacks">
+		<span class="label">Stacks</span>
+		<span class="value">{stacks.data?.length ?? '–'}</span>
+		<span class="hint" class:warn={drifted.length}>
+			{drifted.length ? `${drifted.length} drifted` : 'all as deployed'}
+		</span>
+	</a>
+	<a class="tile" href="/services">
+		<span class="label">Services</span>
+		<span class="value">{services.data?.length ?? '–'}</span>
+		<span class="hint" class:bad={troubled.length}>
+			{troubled.length ? `${troubled.length} degraded` : 'all running'}
+		</span>
+	</a>
+	{#if nodes}
+		<a class="tile" href="/nodes">
+			<span class="label">Nodes</span>
+			<span class="value">{nodes.data?.length ?? '–'}</span>
+			<span class="hint" class:bad={badNodes.length}>
+				{badNodes.length ? `${badNodes.length} not ready` : 'all ready'}
+			</span>
+		</a>
+	{/if}
+	<a class="tile" href="#attention">
+		<span class="label">Waiting for approval</span>
+		<span class="value">{waiting.length}</span>
+		<span class="hint" class:warn={pendingUpdates.length}>
+			{pendingUpdates.length} image update{pendingUpdates.length === 1 ? '' : 's'} pending
+		</span>
+	</a>
+</div>
+
 {#if system}
 	<Status loading={system.loading && !system.data} error={system.error} />
 {:else}
@@ -122,7 +156,7 @@
 {/if}
 
 {#if isManager}
-	<h2>Needs attention</h2>
+	<h2 id="attention">Needs attention</h2>
 	{#if troubled.length === 0 && badNodes.length === 0 && recentErrors.length === 0}
 		<p class="muted">Nothing wrong right now.</p>
 	{/if}
@@ -185,6 +219,48 @@
 {/if}
 
 <style>
+	.tiles {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+		gap: 0.75rem;
+		margin-bottom: 1.25rem;
+	}
+	.tile {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		padding: 0.9rem 1.1rem;
+		background: var(--panel);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		box-shadow: var(--shadow);
+		color: var(--fg);
+	}
+	.tile:hover {
+		border-color: var(--border-strong);
+		text-decoration: none;
+	}
+	.tile .label {
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--muted);
+	}
+	.tile .value {
+		font-size: 1.7rem;
+		font-weight: 650;
+		line-height: 1.2;
+	}
+	.tile .hint {
+		font-size: 0.82rem;
+		color: var(--muted);
+	}
+	.tile .hint.warn {
+		color: var(--warn);
+	}
+	.tile .hint.bad {
+		color: var(--bad);
+	}
 	.nowrap {
 		white-space: nowrap;
 	}

@@ -137,7 +137,7 @@
 	}
 </script>
 
-<p><a href="/stacks/{id}">← {stack?.name ?? 'Stack'}</a></p>
+<p class="crumbs"><a href="/stacks/{id}">← {stack?.name ?? 'Stack'}</a></p>
 
 {#if saved}
 	<h1>Saved</h1>

@@ -17,7 +17,7 @@
 
 {#if task.data}
 	{@const t = task.data}
-	<p><a href="/services/{t.service_id}">← Service</a></p>
+	<p class="crumbs"><a href="/services/{t.service_id}">← Service</a></p>
 	<h1>
 		Task {t.slot ?? shortId(t.id)}
 		<Badge value={t.state} />

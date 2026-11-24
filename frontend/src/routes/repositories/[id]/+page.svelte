@@ -71,7 +71,7 @@
 	}
 </script>
 
-<p><a href="/repositories">← Repositories</a></p>
+<p class="crumbs"><a href="/repositories">← Repositories</a></p>
 <Status loading={repo.loading && !repo.data} error={repo.error} />
 
 {#if repo.data}
