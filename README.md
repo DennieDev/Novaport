@@ -8,7 +8,9 @@ definition.
 
 > Early development. Nothing here is ready for use yet.
 
-See [docs/design.md](docs/design.md) for the design.
+- [Writing stacks](docs/stacks.md): repository layout, `novaport.yaml`, secrets, image updates.
+- [Running Novaport](docs/operations.md): installing, configuration, webhooks, backups, upgrades.
+- [Design](docs/design.md).
 
 ## Running on Docker Swarm
 
