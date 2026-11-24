@@ -199,8 +199,15 @@ def failed_task(task_id: str) -> dict[str, Any]:
     return {
         "ID": task_id,
         "ServiceID": "svc",
+        "NodeID": "node1",
+        "Slot": 1,
         "CreatedAt": "2026-11-24T12:00:05Z",
-        "Status": {"State": "failed", "Err": "task: non-zero exit (1)"},
+        "Status": {
+            "State": "failed",
+            "Err": "task: non-zero exit (1)",
+            "Timestamp": f"2026-11-24T12:00:1{task_id[-1]}Z",
+            "ContainerStatus": {"ContainerID": f"c-{task_id}"},
+        },
     }
 
 
@@ -215,8 +222,9 @@ async def test_a_crash_loop_fails_the_rollout() -> None:
         interval=0.01,
     )
     assert not outcome.ok
-    assert outcome.errors[0] == "shop_job keeps failing after it starts"
-    assert "task: non-zero exit (1)" in outcome.errors[1]
+    assert outcome.errors == ["shop_job: failed: task: non-zero exit (1)"]
+    [latest] = outcome.failed
+    assert (latest.name, latest.node_id, latest.container_id) == ("shop_job.1", "node1", "c-t2")
 
 
 async def test_a_single_failure_restarts_the_stable_window() -> None:

@@ -21,10 +21,19 @@ class ServiceState:
 
 
 @dataclass
+class FailedTask:
+    name: str
+    node_id: str | None
+    container_id: str | None
+
+
+@dataclass
 class Outcome:
     ok: bool
     services: list[ServiceState] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    # The latest failed container of each failing service, so its output can be shown.
+    failed: list[FailedTask] = field(default_factory=list)
 
 
 def _parse_time(value: str | None) -> datetime | None:
@@ -76,6 +85,32 @@ def _task_errors(
                 errors.append(message)
             rejected = rejected or status.get("State") == "rejected"
     return errors, rejected
+
+
+def _latest_failures(
+    tasks: list[Obj], since: datetime, names: dict[str, str], service_ids: set[str]
+) -> list[FailedTask]:
+    latest: dict[str, Obj] = {}
+    for task in tasks:
+        created = _parse_time(task.get("CreatedAt"))
+        sid = task.get("ServiceID", "")
+        if created is None or created < since or sid not in service_ids:
+            continue
+        if task.get("Status", {}).get("State") != "failed":
+            continue
+        current = latest.get(sid)
+        if current is None or task.get("Status", {}).get("Timestamp", "") > current.get(
+            "Status", {}
+        ).get("Timestamp", ""):
+            latest[sid] = task
+    return [
+        FailedTask(
+            name=f"{names.get(sid, sid)}.{t.get('Slot') or t['ID'][:12]}",
+            node_id=t.get("NodeID") or None,
+            container_id=(t.get("Status", {}).get("ContainerStatus") or {}).get("ContainerID"),
+        )
+        for sid, t in sorted(latest.items(), key=lambda item: names.get(item[0], item[0]))
+    ]
 
 
 def _failed_tasks(tasks: list[Obj], since: datetime) -> dict[str, set[str]]:
@@ -133,12 +168,9 @@ async def converge_swarm(
             problems = [f"{s.name}: {s.detail}" for s in failed_update]
             return Outcome(False, states, problems + errors)
 
-        looping = [
-            names.get(sid, sid) for sid, ids in failed.items() if len(ids) >= crash_loop_after
-        ]
+        looping = {sid for sid, ids in failed.items() if len(ids) >= crash_loop_after}
         if looping:
-            problems = [f"{name} keeps failing after it starts" for name in sorted(looping)]
-            return Outcome(False, states, problems + errors)
+            return Outcome(False, states, errors, _latest_failures(tasks, started, names, looping))
 
         new_failures = set().union(*failed.values()) - seen_failures if failed else set()
         seen_failures |= new_failures
@@ -156,5 +188,10 @@ async def converge_swarm(
                 if waiting
                 else f"Services didn't stay running for {stable_for:g}s"
             )
-            return Outcome(False, states, [reason, *errors])
+            return Outcome(
+                False,
+                states,
+                [reason, *errors],
+                _latest_failures(tasks, started, names, set(failed)),
+            )
         await asyncio.sleep(interval)

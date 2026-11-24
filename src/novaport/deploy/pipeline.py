@@ -13,7 +13,7 @@ from dotenv import dotenv_values
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from novaport.agents.pool import Agents
+from novaport.agents.pool import AgentError, Agents, AgentUnavailable
 from novaport.config import Settings
 from novaport.deploy.cli import DockerCli
 from novaport.deploy.compose import (
@@ -25,7 +25,7 @@ from novaport.deploy.compose import (
     apply_secret_names,
     materialize_secrets,
 )
-from novaport.deploy.converge import converge_swarm
+from novaport.deploy.converge import FailedTask, converge_swarm
 from novaport.deploy.drift import snapshot
 from novaport.deploy.preflight import preflight
 from novaport.docker.client import ClusterReader
@@ -51,6 +51,8 @@ log = logging.getLogger(__name__)
 
 RENDERED_FILE = ".novaport-compose.yaml"
 SOURCE_FILE = ".novaport-source.yaml"
+# How much of a crashed container's output a failed deploy shows.
+LOG_LINES = 20
 
 
 class DeployFailed(Exception):
@@ -283,7 +285,7 @@ class Pipeline:
             await self._command(db, deployment, "apply", result)
 
         if stack.type == StackType.SWARM:
-            await self._converge(db, deployment, started, timeout, target.reader)
+            await self._converge(db, deployment, started, timeout, target.reader, target.agents)
             await self._remove_old_secrets(db, deployment, set(secret_names.values()), target)
             await self._snapshot(stack, target.reader)
         else:
@@ -368,6 +370,22 @@ class Pipeline:
         if report.errors:
             raise DeployFailed("preflight", "\n".join(report.errors))
 
+    async def _last_output(self, agents: Agents | None, task: FailedTask) -> str | None:
+        """The end of a failed container's logs; the exit code alone rarely says why."""
+        if agents is None or not agents.enabled or not task.node_id or not task.container_id:
+            return None
+        try:
+            result = await agents.get(
+                task.node_id,
+                f"/containers/{task.container_id}/logs",
+                {"tail": LOG_LINES, "timestamps": False},
+            )
+        except (AgentUnavailable, AgentError) as exc:
+            log.info("No logs for failed task %s: %s", task.name, exc)
+            return None
+        lines = [line for line in (result or {}).get("lines", []) if line.strip()]
+        return "\n".join(lines) or None
+
     async def _converge(
         self,
         db: AsyncSession,
@@ -375,6 +393,7 @@ class Pipeline:
         started: datetime,
         timeout: int,
         reader: ClusterReader | None,
+        agents: Agents | None = None,
     ) -> None:
         if reader is None:
             raise DeployFailed("converge", "No Docker connection to watch the rollout.")
@@ -391,5 +410,9 @@ class Pipeline:
             report=report,
         )
         if not outcome.ok:
-            raise DeployFailed("converge", "\n".join(outcome.errors) or "Rollout failed.")
+            parts = ["\n".join(outcome.errors) or "Rollout failed."]
+            for task in outcome.failed:
+                if output := await self._last_output(agents, task):
+                    parts.append(f"{task.name}:\n{output}")
+            raise DeployFailed("converge", "\n\n".join(parts))
         await self._event(db, deployment, "converge", "info", "All services are running.")
