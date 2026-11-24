@@ -31,6 +31,8 @@ from novaport.docker.client import (
     NotSwarmManager,
 )
 from novaport.edge.hub import EdgeHub, Target, Targets
+from novaport.events import EventHub
+from novaport.events import install as install_events
 from novaport.git import Identity
 from novaport.jobs import Jobs
 from novaport.models import Outcome
@@ -51,6 +53,7 @@ from novaport.server.api import (
     webhooks,
 )
 from novaport.server.api import endpoints as endpoints_api
+from novaport.server.api import live as live_api
 from novaport.server.api import notifications as notifications_api
 from novaport.server.api import registries as registries_api
 from novaport.server.api import restart as restart_api
@@ -127,6 +130,7 @@ def create_app(
     http_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
+    install_events()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -134,6 +138,8 @@ def create_app(
         maker = async_sessionmaker(engine, expire_on_commit=False)
         app.state.engine = engine
         app.state.sessionmaker = maker
+        app.state.events = EventHub(engine)
+        app.state.events.start()
 
         try:
             async with maker() as db:
@@ -258,6 +264,7 @@ def create_app(
             if docker is not None:
                 await docker.close()
             await edge.close()
+            await app.state.events.stop()
             await notifier.drain()
             await http.aclose()
             await engine.dispose()
@@ -295,6 +302,7 @@ def create_app(
     app.include_router(endpoints_api.ws_router)
     app.include_router(agents_api.router)
     app.include_router(agents_api.ws_router)
+    app.include_router(live_api.ws_router)
 
     if settings.static_dir is not None:
         app.mount("/", SPAStaticFiles(directory=settings.static_dir, html=True), name="frontend")

@@ -7,7 +7,7 @@
 	import type { NotificationChannel, NotificationSubscription, Stack } from '#lib/types.ts';
 
 	const channels = poll<NotificationChannel[]>(() => '/notification-channels', 30_000);
-	const stacks = poll<Stack[]>(() => '/stacks', 60_000);
+	const stacks = poll<Stack[]>(() => '/stacks', 60_000, { topics: ['stacks'] });
 
 	const events: { value: string; label: string }[] = [
 		{ value: '*', label: 'Everything' },

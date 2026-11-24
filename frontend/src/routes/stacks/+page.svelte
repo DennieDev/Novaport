@@ -3,10 +3,11 @@
 	import Badge from '#lib/components/Badge.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago } from '#lib/format.ts';
+	import { STACK_TOPICS } from '#lib/live.svelte.ts';
 	import { poll } from '#lib/poll.svelte.ts';
 	import type { Stack } from '#lib/types.ts';
 
-	const stacks = poll<Stack[]>(() => '/stacks', 5000);
+	const stacks = poll<Stack[]>(() => '/stacks', 5000, { topics: STACK_TOPICS });
 
 	function behind(s: Stack): boolean {
 		return !!s.latest_revision && s.latest_revision.id !== s.last_good_revision?.id;

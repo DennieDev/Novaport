@@ -8,7 +8,7 @@
 	import { can } from '#lib/session.svelte.ts';
 	import type { Endpoint, EndpointKey } from '#lib/types.ts';
 
-	const endpoints = poll<Endpoint[]>(() => '/endpoints', 10_000);
+	const endpoints = poll<Endpoint[]>(() => '/endpoints', 10_000, { topics: ['endpoints'] });
 
 	let name = $state('');
 	let error = $state<string | undefined>();

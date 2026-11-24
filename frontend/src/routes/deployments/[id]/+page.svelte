@@ -5,12 +5,16 @@
 	import Badge from '#lib/components/Badge.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago } from '#lib/format.ts';
+	import { onRow } from '#lib/live.svelte.ts';
 	import { poll } from '#lib/poll.svelte.ts';
 	import { can } from '#lib/session.svelte.ts';
 	import type { DeploymentDetail } from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
-	const deployment = poll<DeploymentDetail>(() => `/deployments/${id}`, 2000);
+	const deployment = poll<DeploymentDetail>(() => `/deployments/${id}`, 2000, {
+		topics: ['deployments'],
+		match: onRow(() => id)
+	});
 
 	let error = $state<string | undefined>();
 	let busy = $state(false);

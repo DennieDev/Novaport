@@ -7,7 +7,9 @@
 	import { poll } from '#lib/poll.svelte.ts';
 	import type { DeployMode, Repository } from '#lib/types.ts';
 
-	const repos = poll<Repository[]>(() => '/repositories', 30_000);
+	const repos = poll<Repository[]>(() => '/repositories', 30_000, {
+		topics: ['repositories', 'stacks']
+	});
 
 	let adding = $state(false);
 	let form = $state({

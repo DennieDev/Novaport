@@ -5,6 +5,7 @@
 	import ImageUpdates from '#lib/components/ImageUpdates.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago, bytes, degraded, replicas } from '#lib/format.ts';
+	import { STACK_TOPICS } from '#lib/live.svelte.ts';
 	import { poll } from '#lib/poll.svelte.ts';
 	import { can } from '#lib/session.svelte.ts';
 	import type {
@@ -25,13 +26,15 @@
 	const services = poll<ServiceSummary[]>(() => '/services');
 	const nodes = cluster ? poll<Node[]>(() => '/nodes') : undefined;
 	const tasks = cluster ? poll<Task[]>(() => '/tasks') : undefined;
-	const deployments = poll<Deployment[]>(() => '/deployments?limit=10', 5000);
+	const deployments = poll<Deployment[]>(() => '/deployments?limit=10', 5000, {
+		topics: ['deployments']
+	});
 	const waiting = $derived(
 		(deployments.data ?? []).filter((d) => d.status === 'awaiting_approval')
 	);
 
-	const updates = poll<ImageCheck[]>(() => '/updates', 60_000);
-	const stacks = poll<Stack[]>(() => '/stacks', 60_000);
+	const updates = poll<ImageCheck[]>(() => '/updates', 60_000, { topics: ['image_checks'] });
+	const stacks = poll<Stack[]>(() => '/stacks', 60_000, { topics: STACK_TOPICS });
 	const drifted = $derived((stacks.data ?? []).filter((s) => s.drift?.length));
 	const pendingUpdates = $derived(
 		(updates.data ?? []).filter((c) => c.status === 'available' && c.action_taken !== 'committed')

@@ -9,7 +9,9 @@
 	import type { Repository, SyncResult } from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
-	const repo = poll<Repository>(() => `/repositories/${id}`, 15_000);
+	const repo = poll<Repository>(() => `/repositories/${id}`, 15_000, {
+		topics: ['repositories', 'stacks']
+	});
 
 	let showSecret = $state(false);
 	let message = $state<string | undefined>();

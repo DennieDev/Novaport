@@ -8,15 +8,28 @@
 	import ImageUpdates from '#lib/components/ImageUpdates.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago } from '#lib/format.ts';
+	import { onStack, STACK_TOPICS } from '#lib/live.svelte.ts';
 	import { poll } from '#lib/poll.svelte.ts';
 	import { can } from '#lib/session.svelte.ts';
 	import type { Deployment, ImageCheck, Revision, Stack } from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
-	const stack = poll<Stack>(() => `/stacks/${id}`, 5000);
-	const revisions = poll<Revision[]>(() => `/stacks/${id}/revisions`, 15_000);
-	const deployments = poll<Deployment[]>(() => `/stacks/${id}/deployments?limit=20`, 5000);
-	const updates = poll<ImageCheck[]>(() => `/stacks/${id}/updates`, 60_000);
+	const stack = poll<Stack>(() => `/stacks/${id}`, 5000, {
+		topics: STACK_TOPICS,
+		match: onStack(() => id)
+	});
+	const revisions = poll<Revision[]>(() => `/stacks/${id}/revisions`, 15_000, {
+		topics: ['revisions'],
+		match: onStack(() => id)
+	});
+	const deployments = poll<Deployment[]>(() => `/stacks/${id}/deployments?limit=20`, 5000, {
+		topics: ['deployments'],
+		match: onStack(() => id)
+	});
+	const updates = poll<ImageCheck[]>(() => `/stacks/${id}/updates`, 60_000, {
+		topics: ['image_checks'],
+		match: onStack(() => id)
+	});
 	let checking = $state(false);
 
 	async function checkUpdates() {

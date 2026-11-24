@@ -107,7 +107,14 @@ Postgres only. Besides normal storage it provides:
 
 SvelteKit with TypeScript, built to static files and served by the server. CodeMirror 6 for the
 compose editor and diff views (much lighter than Monaco and simpler to bundle), xterm.js for
-terminals. Pages poll the API for now; a single live WebSocket per tab can replace that later.
+terminals.
+
+Each tab keeps one WebSocket to `/api/events`. When a transaction that touches stacks,
+revisions, deployments, repositories, image checks, or endpoints commits, the server sends a
+`NOTIFY` with the table, row, and stack, and forwards it to every socket whose user may see that
+stack. Events carry no data; pages reload the affected resource through the normal API. While
+the socket is connected, those pages poll only every two minutes as a fallback. Swarm state
+(services, tasks, nodes) still comes from polling.
 
 ### Image
 
