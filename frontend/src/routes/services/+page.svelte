@@ -19,7 +19,7 @@
 </script>
 
 <h1>Services</h1>
-<p><input placeholder="Filter by name, stack or image" bind:value={filter} /></p>
+<p><input class="filter" placeholder="Filter by name, stack or image" bind:value={filter} /></p>
 <Status loading={services.loading && !services.data} error={services.error} />
 
 {#if services.data}
@@ -65,3 +65,9 @@
 		</tbody>
 	</table>
 {/if}
+
+<style>
+	.filter {
+		width: min(24rem, 100%);
+	}
+</style>
