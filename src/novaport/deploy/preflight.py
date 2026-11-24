@@ -9,7 +9,8 @@ from typing import Any
 
 from novaport.agents.pool import AgentError, Agents, AgentUnavailable
 from novaport.deploy.constraints import InvalidConstraint, eligible_nodes
-from novaport.docker.client import ClusterReader
+from novaport.docker.client import ClusterReader, NotSwarmManager
+from novaport.docker.views import STACK_LABEL
 from novaport.models import StackType
 from novaport.registries.client import RegistryClient, RegistryError
 from novaport.registries.reference import InvalidReference, parse_reference
@@ -130,6 +131,85 @@ async def _check_images(
     await asyncio.gather(*(check(image, users) for image, users in images.items()))
 
 
+COMPOSE_PROJECT_LABEL = "com.docker.compose.project"
+
+
+def published_ports(service: Mapping[str, Any]) -> list[tuple[int, str, str]]:
+    """(port, protocol, mode) for each published port of a normalised compose service."""
+    result: list[tuple[int, str, str]] = []
+    for port in service.get("ports") or []:
+        if not isinstance(port, Mapping) or port.get("published") in (None, ""):
+            continue
+        protocol = str(port.get("protocol") or "tcp")
+        mode = str(port.get("mode") or "ingress")
+        first, _, last = str(port["published"]).partition("-")
+        try:
+            numbers = range(int(first), int(last or first) + 1)
+        except ValueError:
+            continue
+        result.extend((n, protocol, mode) for n in numbers)
+    return result
+
+
+async def _taken_ports(
+    stack_type: StackType, stack: str, reader: ClusterReader
+) -> dict[tuple[int, str], tuple[str, str]]:
+    """Ports published by other stacks: (port, protocol) to (owner, mode)."""
+    taken: dict[tuple[int, str], tuple[str, str]] = {}
+    try:
+        services = await reader.services()
+    except NotSwarmManager:
+        services = []
+    for raw in services:
+        spec = raw.get("Spec", {})
+        if stack_type == StackType.SWARM and (spec.get("Labels") or {}).get(STACK_LABEL) == stack:
+            continue
+        for p in (raw.get("Endpoint") or {}).get("Ports") or []:
+            if p.get("PublishedPort"):
+                key = (int(p["PublishedPort"]), str(p.get("Protocol") or "tcp"))
+                taken[key] = (
+                    str(spec.get("Name") or raw.get("ID")),
+                    p.get("PublishMode", "ingress"),
+                )
+    if stack_type == StackType.COMPOSE:
+        for c in await reader.containers(COMPOSE_PROJECT_LABEL):
+            labels = c.get("Labels") or {}
+            if labels.get(COMPOSE_PROJECT_LABEL) == stack or c.get("State") != "running":
+                continue
+            name = ((c.get("Names") or ["?"])[0]).lstrip("/")
+            for p in c.get("Ports") or []:
+                if p.get("PublicPort"):
+                    taken[(int(p["PublicPort"]), str(p.get("Type") or "tcp"))] = (name, "host")
+    return taken
+
+
+async def _check_ports(
+    config: Mapping[str, Any],
+    stack_type: StackType,
+    stack: str,
+    reader: ClusterReader,
+    report: Report,
+) -> None:
+    wanted: dict[tuple[int, str], set[str]] = defaultdict(set)
+    for service in (config.get("services") or {}).values():
+        for port, protocol, mode in published_ports(service):
+            wanted[(port, protocol)].add(mode)
+    if not wanted:
+        return
+    taken = await _taken_ports(stack_type, stack, reader)
+    for (port, protocol), modes in sorted(wanted.items()):
+        if (owner := taken.get((port, protocol))) is None:
+            continue
+        name, mode = owner
+        if stack_type == StackType.SWARM and mode == "host" and modes == {"host"}:
+            report.warnings.append(
+                f"Port {port}/{protocol} is also published in host mode by {name}; "
+                "tasks on the same node will fail to start."
+            )
+        else:
+            report.errors.append(f"Port {port}/{protocol} is already published by {name}.")
+
+
 async def preflight(
     config: Mapping[str, Any],
     stack_type: StackType,
@@ -140,6 +220,7 @@ async def preflight(
 ) -> Report:
     report = Report()
     await _check_externals(config, stack_type, reader, report)
+    await _check_ports(config, stack_type, stack, reader, report)
     if registry is not None:
         await _check_images(config.get("services") or {}, stack_type, registry, report)
 

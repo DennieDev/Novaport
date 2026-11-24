@@ -286,6 +286,24 @@ async def test_preflight_refuses_missing_external_network(novaport: Novaport) ->
     assert docker("service", "ls", "--quiet", "--filter", f"name={novaport.stack}_") == ""
 
 
+async def test_preflight_refuses_a_port_another_stack_publishes(
+    novaport: Novaport, tmp_path: Path
+) -> None:
+    other = f"{novaport.stack}x"
+    (tmp_path / "other.yaml").write_text(compose(extra='    ports: ["18080:80"]\n'))
+    docker("stack", "deploy", "--detach=true", "-c", str(tmp_path / "other.yaml"), other)
+    try:
+        novaport.write(compose(extra='    ports: ["18080:80"]\n'))
+        await novaport.add_repository()
+        await novaport.push("Add app")
+        d = await novaport.deployed()
+        assert d["status"] == "failed"
+        assert d["stage"] == "preflight"
+        assert d["error"] == f"Port 18080/tcp is already published by {other}_app."
+    finally:
+        _cleanup(other)
+
+
 @needs_agents
 async def test_preflight_checks_bind_mounts_on_every_node(novaport: Novaport) -> None:
     path = f"/srv/{novaport.stack}"

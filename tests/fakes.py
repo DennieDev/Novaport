@@ -188,7 +188,9 @@ class FakeReader:
 
     async def containers(self, label: str) -> list[Obj]:
         self._check()
-        key, _, value = label.partition("=")
+        key, has_value, value = label.partition("=")
+        if not has_value:
+            return [c for c in self.container_list if key in c.get("Labels", {})]
         return [c for c in self.container_list if c.get("Labels", {}).get(key) == value]
 
     async def service(self, service_id: str) -> Obj:
