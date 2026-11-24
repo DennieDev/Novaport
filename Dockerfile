@@ -51,7 +51,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     NOVAPORT_STATIC_DIR=/app/static
 
 LABEL org.opencontainers.image.title="Novaport" \
-      org.opencontainers.image.source="https://github.com/DennieDev/NovaPort" \
+      org.opencontainers.image.source="https://github.com/DennieDev/Novaport" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
 EXPOSE 8000
