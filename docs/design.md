@@ -495,7 +495,8 @@ cover the manager the agent runs on.
 - Integration tests against a throwaway three-node Swarm (Docker-in-Docker, with an agent on
   every node) and local git repositories, driven through the API: deploys and updates from git,
   failed rollouts and rollback, pre-flight failures, drift, secret rotation, and Compose stacks.
-- Frontend: component tests, and a small end-to-end suite against the integration environment.
+- Frontend: unit and component tests with Vitest, and a small Playwright suite that logs in,
+  adds a repository, deploys a stack to the test Swarm, and checks that live updates arrive.
 
 ## Roadmap
 

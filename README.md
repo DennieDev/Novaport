@@ -181,6 +181,10 @@ tests/integration/swarm.sh down
 Without `NOVAPORT_SWARM_AGENT_IMAGE` the Swarm runs without agents and the tests that need them
 are skipped.
 
+Frontend tests: `npm test` in `frontend` runs the unit and component tests. With the test Swarm
+and Postgres from above, `frontend/e2e/run.sh` builds the frontend, starts a server, and runs
+the Playwright suite against it.
+
 ## License
 
 AGPL-3.0-or-later. See [LICENSE](LICENSE).

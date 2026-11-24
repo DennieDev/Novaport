@@ -65,6 +65,8 @@ function disconnect() {
 	const ws = socket;
 	socket = undefined;
 	live.connected = false;
+	// Whoever subscribes next loads fresh data anyway.
+	openedBefore = false;
 	ws?.close();
 }
 

@@ -65,6 +65,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run check
+      - run: npm test
       - run: npm run build
 
   integration:
@@ -113,6 +114,22 @@ jobs:
         run: NOVAPORT_SWARM_AGENT_IMAGE=novaport:dev tests/integration/swarm.sh up >> "$GITHUB_ENV"
       - run: uv sync --locked
       - run: uv run pytest tests/integration
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies and Chromium
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - run: frontend/e2e/run.sh
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
       - name: Stop the test Swarm
         if: always()
         run: tests/integration/swarm.sh down
