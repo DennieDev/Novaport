@@ -185,6 +185,13 @@ Frontend tests: `npm test` in `frontend` runs the unit and component tests. With
 and Postgres from above, `frontend/e2e/run.sh` builds the frontend, starts a server, and runs
 the Playwright suite against it.
 
+### Releasing
+
+Set the version in `pyproject.toml` (for example `0.2.0`, or `0.2.0rc1` for a pre-release), run
+`uv lock`, commit, and push a matching tag (`v0.2.0`, or `v0.2.0-rc.1`). The release workflow runs
+CI, publishes `ghcr.io/denniedev/novaport` for amd64 and arm64, and creates the GitHub release.
+Pre-releases don't move `latest`.
+
 ## License
 
 AGPL-3.0-or-later. See [LICENSE](LICENSE).
