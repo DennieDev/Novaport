@@ -26,7 +26,7 @@
 	const services = poll<ServiceSummary[]>(() => '/services');
 	const nodes = cluster ? poll<Node[]>(() => '/nodes') : undefined;
 	const tasks = cluster ? poll<Task[]>(() => '/tasks') : undefined;
-	const deployments = poll<Deployment[]>(() => '/deployments?limit=10', 5000, {
+	const deployments = poll<Deployment[]>(() => '/deployments?limit=5', 5000, {
 		topics: ['deployments']
 	});
 	const waiting = $derived(
@@ -77,7 +77,7 @@
 			</span>
 		</a>
 	{/if}
-	<a class="tile" href="#attention">
+	<a class="tile" href="#approvals">
 		<span class="label">Waiting for approval</span>
 		<span class="value">{waiting.length}</span>
 		<span class="hint" class:warn={pendingUpdates.length}>
@@ -94,32 +94,9 @@
 	</p>
 {/if}
 
-{#if system?.data}
-	{@const s = system.data}
-	<div class="panel">
-		<dl class="kv">
-			<dt>Host</dt>
-			<dd>{s.name} · Docker {s.docker_version} · {s.os} ({s.architecture})</dd>
-			<dt>Resources</dt>
-			<dd>{s.cpus} CPUs · {bytes(s.memory_bytes)}</dd>
-			<dt>Containers</dt>
-			<dd>{s.containers_running} running of {s.containers} · {s.images} images</dd>
-			<dt>Swarm</dt>
-			<dd>
-				<Badge value={s.swarm.state} />
-				{#if s.swarm.is_manager}
-					manager · {s.swarm.nodes} nodes, {s.swarm.managers} managers
-				{:else if s.swarm.state === 'active'}
-					worker; connect Novaport to a manager to see the cluster
-				{/if}
-				{#if s.swarm.error}<span class="error">{s.swarm.error}</span>{/if}
-			</dd>
-		</dl>
-	</div>
-{/if}
 
 {#if waiting.length}
-	<h2>Waiting for approval</h2>
+	<h2 id="approvals">Waiting for approval</h2>
 	<table>
 		<tbody>
 			{#each waiting as d (d.id)}<DeploymentRow {d} showStack />{/each}
@@ -146,22 +123,15 @@
 	<ImageUpdates checks={pendingUpdates} showStack />
 {/if}
 
-{#if deployments.data?.length}
-	<h2>Recent deployments</h2>
-	<table>
-		<tbody>
-			{#each deployments.data as d (d.id)}<DeploymentRow {d} showStack />{/each}
-		</tbody>
-	</table>
-{/if}
 
 {#if isManager}
-	<h2 id="attention">Needs attention</h2>
 	{#if troubled.length === 0 && badNodes.length === 0 && recentErrors.length === 0}
+		<h2>Cluster health</h2>
 		<p class="muted">Nothing wrong right now.</p>
 	{/if}
 
 	{#if badNodes.length}
+		<h2>Nodes not ready</h2>
 		<table>
 			<thead><tr><th>Node</th><th>State</th><th>Message</th></tr></thead>
 			<tbody>
@@ -218,7 +188,51 @@
 	{/if}
 {/if}
 
+{#if deployments.data?.length}
+	<h2>Recent deployments</h2>
+	<table>
+		<tbody>
+			{#each deployments.data as d (d.id)}<DeploymentRow {d} showStack />{/each}
+		</tbody>
+	</table>
+{/if}
+
+{#if system?.data}
+	{@const s = system.data}
+	<details class="host">
+		<summary>Host details</summary>
+		<div class="panel">
+			<dl class="kv">
+				<dt>Host</dt>
+				<dd>{s.name} · Docker {s.docker_version} · {s.os} ({s.architecture})</dd>
+				<dt>Resources</dt>
+				<dd>{s.cpus} CPUs · {bytes(s.memory_bytes)}</dd>
+				<dt>Containers</dt>
+				<dd>{s.containers_running} running of {s.containers} · {s.images} images</dd>
+				<dt>Swarm</dt>
+				<dd>
+					<Badge value={s.swarm.state} />
+					{#if s.swarm.is_manager}
+						manager · {s.swarm.nodes} nodes, {s.swarm.managers} managers
+					{:else if s.swarm.state === 'active'}
+						worker; connect Novaport to a manager to see the cluster
+					{/if}
+					{#if s.swarm.error}<span class="error">{s.swarm.error}</span>{/if}
+				</dd>
+			</dl>
+		</div>
+	</details>
+{/if}
+
 <style>
+	.host {
+		margin-top: 2rem;
+	}
+	.host summary {
+		cursor: pointer;
+		color: var(--muted);
+		margin-bottom: 0.6rem;
+	}
 	.tiles {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));

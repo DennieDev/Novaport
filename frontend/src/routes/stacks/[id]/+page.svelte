@@ -16,6 +16,7 @@
 	import type { Deployment, ImageCheck, Revision, Stack } from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
+	const tab = $derived(page.url.searchParams.get('tab') ?? 'services');
 	const stack = poll<Stack>(() => `/stacks/${id}`, 5000, {
 		topics: STACK_TOPICS,
 		match: onStack(() => id)
@@ -32,6 +33,9 @@
 		topics: ['image_checks'],
 		match: onStack(() => id)
 	});
+	const availableUpdates = $derived(
+		(updates.data ?? []).filter((c) => c.status === 'available').length
+	);
 	let checking = $state(false);
 
 	async function checkUpdates() {
@@ -103,7 +107,8 @@
 			</h1>
 			<p class="subtitle">
 				<a href="/repositories/{s.repository.id}">{s.repository.name}</a> · <code>{s.path}</code>
-				· {s.endpoint ?? 'local'}
+				· {s.endpoint ?? 'local'} · deploys {s.deploy_mode} · edits by
+				{s.edit_mode === 'pr' ? 'pull request' : 'commit'}
 			</p>
 		</div>
 		<div class="toolbar">
@@ -144,40 +149,29 @@
 		<p class="muted">New revisions are ignored until novaport.yaml is fixed.</p>
 	{/if}
 
-	<div class="summary">
-		<div class="panel">
-			<div class="label">Running</div>
+	<div class="panel strip">
+		<div>
+			<span class="label">Running</span>
 			{#if s.last_good_revision}
-				<div><code>{s.last_good_revision.commit.slice(0, 10)}</code> {s.last_good_revision.message}</div>
-			{:else}<div class="muted">never deployed by Novaport</div>{/if}
+				<code>{s.last_good_revision.commit.slice(0, 10)}</code> {s.last_good_revision.message}
+			{:else}<span class="muted">never deployed by Novaport</span>{/if}
 		</div>
-		<div class="panel">
-			<div class="label">Latest in git</div>
-			{#if s.latest_revision}
-				<div>
-					<code>{s.latest_revision.commit.slice(0, 10)}</code>
-					{s.latest_revision.message}
-					{#if s.latest_revision.id !== s.last_good_revision?.id}<Badge value="not deployed" />{/if}
-				</div>
-				<div class="muted">{s.latest_revision.author}, {ago(s.latest_revision.committed_at)}</div>
-			{:else}<div>–</div>{/if}
-		</div>
-		<div class="panel">
-			<div class="label">Mode</div>
-			<div>Deploy: {s.deploy_mode}</div>
-			<div class="muted">Edits: {s.edit_mode === 'pr' ? 'pull request' : 'commit to branch'}</div>
-		</div>
-		<div class="panel">
-			<div class="label">Last deployment</div>
-			{#if s.last_deployment}
-				<div>
-					<a href="/deployments/{s.last_deployment.id}">
-						<Badge value={s.last_deployment.status.replace('_', ' ')} />
-					</a>
-				</div>
-				<div class="muted">{ago(s.last_deployment.created_at)}</div>
-			{:else}<div class="muted">none</div>{/if}
-		</div>
+		{#if s.latest_revision && s.latest_revision.id !== s.last_good_revision?.id}
+			<div>
+				<span class="label">Newer in git</span>
+				<code>{s.latest_revision.commit.slice(0, 10)}</code> {s.latest_revision.message}
+				<span class="muted">· {s.latest_revision.author}, {ago(s.latest_revision.committed_at)}</span>
+			</div>
+		{/if}
+		{#if s.last_deployment}
+			<div>
+				<span class="label">Last deploy</span>
+				<a href="/deployments/{s.last_deployment.id}">
+					<Badge value={s.last_deployment.status.replace('_', ' ')} />
+				</a>
+				<span class="muted">{ago(s.last_deployment.created_at)}</span>
+			</div>
+		{/if}
 	</div>
 
 	{#if s.drift?.length}
@@ -193,83 +187,107 @@
 		</div>
 	{/if}
 
-	<StackServices stackId={s.id} operator={can('operator', s.id)} />
+	<nav class="tabs">
+		<a href="?tab=services" class:active={tab === 'services'}>Services</a>
+		<a href="?tab=history" class:active={tab === 'history'}>History</a>
+		<a href="?tab=updates" class:active={tab === 'updates'}>
+			Image updates{#if availableUpdates}<span class="count">{availableUpdates}</span>{/if}
+		</a>
+	</nav>
 
-	<h2>Image updates</h2>
-	{#if updates.data?.length}
-		<ImageUpdates checks={updates.data} />
+	{#if tab === 'history'}
+		<h2 class="first">Deployments</h2>
+		<table>
+			<tbody>
+				{#each deployments.data ?? [] as d (d.id)}
+					<DeploymentRow {d} />
+				{:else}
+					<tr><td class="muted">No deployments yet.</td></tr>
+				{/each}
+			</tbody>
+		</table>
+
+		<h2>Revisions</h2>
+		<table>
+			<thead>
+				<tr><th>Commit</th><th>Message</th><th>Author</th><th>Committed</th><th></th></tr>
+			</thead>
+			<tbody>
+				{#each revisions.data ?? [] as r (r.id)}
+					<tr>
+						<td><code>{r.commit.slice(0, 10)}</code></td>
+						<td>
+							{r.message}
+							{#if r.id === s.last_good_revision?.id}<Badge value="running" />{/if}
+						</td>
+						<td class="muted">{r.author}</td>
+						<td class="muted">{ago(r.committed_at)}</td>
+						<td>
+							{#if r.id !== s.last_good_revision?.id && !s.removed_at && can('operator', s.id)}
+								<button class="link" onclick={() => deploy(r)} disabled={busy}>deploy</button>
+							{/if}
+						</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	{:else if tab === 'updates'}
+		{#if updates.data?.length}
+			<ImageUpdates checks={updates.data} />
+		{:else}
+			<p class="muted">
+				No service has an <code>x-updates</code> policy. Add one to a service in the compose file
+				to have Novaport look for newer images.
+			</p>
+		{/if}
+		{#if can('operator', s.id) && !s.removed_at}
+			<p>
+				<button onclick={checkUpdates} disabled={checking}>
+					{checking ? 'Checking…' : 'Check for updates now'}
+				</button>
+			</p>
+		{/if}
 	{:else}
-		<p class="muted">
-			No service has an <code>x-updates</code> policy. Add one to a service in the compose file
-			to have Novaport look for newer images.
-		</p>
+		<StackServices stackId={s.id} operator={can('operator', s.id)} />
 	{/if}
-	{#if can('operator', s.id) && !s.removed_at}
-		<p>
-			<button onclick={checkUpdates} disabled={checking}>
-				{checking ? 'Checking…' : 'Check for updates now'}
-			</button>
-		</p>
-	{/if}
-
-	<h2>Deployments</h2>
-	<table>
-		<tbody>
-			{#each deployments.data ?? [] as d (d.id)}
-				<DeploymentRow {d} />
-			{:else}
-				<tr><td class="muted">No deployments yet.</td></tr>
-			{/each}
-		</tbody>
-	</table>
-
-	<h2>Revisions</h2>
-	<table>
-		<thead>
-			<tr><th>Commit</th><th>Message</th><th>Author</th><th>Committed</th><th></th></tr>
-		</thead>
-		<tbody>
-			{#each revisions.data ?? [] as r (r.id)}
-				<tr>
-					<td><code>{r.commit.slice(0, 10)}</code></td>
-					<td>
-						{r.message}
-						{#if r.id === s.last_good_revision?.id}<Badge value="running" />{/if}
-					</td>
-					<td class="muted">{r.author}</td>
-					<td class="muted">{ago(r.committed_at)}</td>
-					<td>
-						{#if r.id !== s.last_good_revision?.id && !s.removed_at && can('operator', s.id)}
-							<button class="link" onclick={() => deploy(r)} disabled={busy}>deploy</button>
-						{/if}
-					</td>
-				</tr>
-			{/each}
-		</tbody>
-	</table>
 {/if}
 
 <style>
-	.summary {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-		gap: 0.75rem;
+	.strip {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 2rem;
+		padding: 0.7rem 1rem;
+		margin-bottom: 1rem;
 	}
-	.summary .panel {
-		padding: 0.75rem 1rem;
+	.strip > div {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
 		min-width: 0;
-		overflow-wrap: anywhere;
+		flex-wrap: wrap;
 	}
 	.label {
 		font-size: 0.72rem;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		color: var(--muted);
-		margin-bottom: 0.3rem;
+		margin-right: 0.2rem;
+	}
+	.count {
+		margin-left: 0.4rem;
+		padding: 0 0.4rem;
+		border-radius: 999px;
+		font-size: 0.75rem;
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+	h2.first {
+		margin-top: 0;
 	}
 	.drift {
 		border-color: var(--warn);
-		margin-top: 1rem;
+		margin-bottom: 1rem;
 	}
 	.drift ul {
 		margin: 0.5rem 0 0;
