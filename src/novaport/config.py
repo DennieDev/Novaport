@@ -102,6 +102,8 @@ class Settings(BaseSettings):
     smtp_security: Literal["starttls", "tls", "none"] = "starttls"
     smtp_from: str = "novaport@localhost"
     deploy_timeout: Duration = timedelta(minutes=5)
+    # A Swarm deploy succeeds only once its services have run this long without a task failing.
+    deploy_stable_for: Duration = timedelta(seconds=15)
     command_timeout: Duration = timedelta(minutes=2)
     # Refuse to let someone approve, or deploy on an approve-mode stack, a revision they
     # authored. Authors are matched on the commit's email address.

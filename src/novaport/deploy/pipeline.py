@@ -383,7 +383,12 @@ class Pipeline:
             await self._event(db, deployment, "converge", "info", summary or "No services yet")
 
         outcome = await converge_swarm(
-            reader, deployment.stack.name, started=started, timeout=timeout, report=report
+            reader,
+            deployment.stack.name,
+            started=started,
+            timeout=timeout,
+            stable_for=self.settings.deploy_stable_for.total_seconds(),
+            report=report,
         )
         if not outcome.ok:
             raise DeployFailed("converge", "\n".join(outcome.errors) or "Rollout failed.")

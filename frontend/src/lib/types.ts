@@ -508,10 +508,16 @@ export interface ServiceRow {
 	containers: ContainerRow[];
 }
 
+export interface StackHealth {
+	state: 'healthy' | 'degraded' | 'down' | 'stopped';
+	problems: string[];
+}
+
 export interface StackContainers {
 	type: 'swarm' | 'compose';
 	endpoint: string | null;
 	agents: boolean;
+	health: StackHealth;
 	services: ServiceRow[];
 }
 

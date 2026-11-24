@@ -78,18 +78,40 @@ def _task_errors(
     return errors, rejected
 
 
+def _failed_tasks(tasks: list[Obj], since: datetime) -> dict[str, set[str]]:
+    """IDs of tasks that failed since the deploy started, by service ID."""
+    failed: dict[str, set[str]] = {}
+    for task in tasks:
+        created = _parse_time(task.get("CreatedAt"))
+        if created is None or created < since:
+            continue
+        if task.get("Status", {}).get("State") == "failed":
+            failed.setdefault(task.get("ServiceID", ""), set()).add(task["ID"])
+    return failed
+
+
 async def converge_swarm(
     reader: ClusterReader,
     stack: str,
     *,
     started: datetime,
     timeout: float,
+    stable_for: float = 0.0,
+    crash_loop_after: int = 2,
     interval: float = 3.0,
     report: Callable[[str], Awaitable[None]] | None = None,
 ) -> Outcome:
+    """Wait until every service runs and has kept running for `stable_for` seconds.
+
+    Swarm counts a crash-looping task as running between restarts, so being up at one moment
+    proves little. A service whose tasks failed `crash_loop_after` times since the deploy
+    started fails the rollout at once.
+    """
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     last_summary = ""
+    stable_since: float | None = None
+    seen_failures: set[str] = set()
     while True:
         services = await reader.services(label=f"{STACK_LABEL}={stack}")
         states = [service_state(s) for s in services]
@@ -99,6 +121,7 @@ async def converge_swarm(
         for raw in services:
             tasks.extend(await reader.tasks(raw["ID"]))
         errors, rejected = _task_errors(tasks, started, names)
+        failed = _failed_tasks(tasks, started)
 
         summary = ", ".join(f"{s.name} {s.detail}" for s in states)
         if report and summary != last_summary:
@@ -109,9 +132,29 @@ async def converge_swarm(
         if failed_update or rejected:
             problems = [f"{s.name}: {s.detail}" for s in failed_update]
             return Outcome(False, states, problems + errors)
-        if all(s.converged for s in states):
-            return Outcome(True, states)
-        if loop.time() >= deadline:
+
+        looping = [
+            names.get(sid, sid) for sid, ids in failed.items() if len(ids) >= crash_loop_after
+        ]
+        if looping:
+            problems = [f"{name} keeps failing after it starts" for name in sorted(looping)]
+            return Outcome(False, states, problems + errors)
+
+        new_failures = set().union(*failed.values()) - seen_failures if failed else set()
+        seen_failures |= new_failures
+        now = loop.time()
+        if all(s.converged for s in states) and not new_failures:
+            stable_since = now if stable_since is None else stable_since
+            if now - stable_since >= stable_for:
+                return Outcome(True, states)
+        else:
+            stable_since = None
+        if now >= deadline:
             waiting = [f"{s.name}: {s.detail}" for s in states if not s.converged]
-            return Outcome(False, states, [f"Timed out waiting for {', '.join(waiting)}", *errors])
+            reason = (
+                f"Timed out waiting for {', '.join(waiting)}"
+                if waiting
+                else f"Services didn't stay running for {stable_for:g}s"
+            )
+            return Outcome(False, states, [reason, *errors])
         await asyncio.sleep(interval)

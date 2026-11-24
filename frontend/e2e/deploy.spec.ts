@@ -55,7 +55,7 @@ test('deploys a stack and follows it to the end', async () => {
 
 test('shows the containers of the stack with their logs', async () => {
 	await page.getByRole('link', { name: `← ${stack}` }).click();
-	const rows = page.locator('section.service .container');
+	const rows = page.locator('table.tasks tbody tr');
 	await expect(rows).toHaveCount(2);
 	await expect(rows.first()).toContainText('running');
 	await rows.first().getByRole('link', { name: 'Logs' }).click();

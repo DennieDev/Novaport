@@ -254,8 +254,7 @@
 	}
 	main {
 		margin-left: 232px;
-		padding: 1.75rem 2rem 3rem;
-		max-width: calc(1360px + 232px);
+		padding: 1.75rem 2.25rem 3rem;
 	}
 	.topbar {
 		display: none;

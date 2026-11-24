@@ -3,6 +3,7 @@ import copy
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from novaport.auth.passwords import hash_password
 from novaport.models import Repository, Role, RoleBinding, Stack, StackType, User
+from novaport.server.api.containers import ContainerRow, ServiceRow, stack_health
 from novaport.server.app import create_app
 from tests.conftest import client_for, make_settings
 from tests.fakes import TASKS, FakeAgents, FakeReader
@@ -199,3 +201,66 @@ async def test_stack_roles_apply(world: World) -> None:
     assert (await world.client.get(f"/api/stacks/{world.shop}/containers")).status_code == 403
     response = await world.client.post(f"/api/stacks/{world.blog}/containers/blog1/restart")
     assert response.status_code == 403
+
+
+def row(name: str, running: int, desired: int | None, *containers: ContainerRow) -> ServiceRow:
+    return ServiceRow(
+        name=name,
+        full_name=name,
+        service_id=None,
+        image="busybox",
+        mode="replicated",
+        replicas_desired=desired,
+        replicas_running=running,
+        ports=[],
+        update_status=None,
+        containers=list(containers),
+    )
+
+
+def task_row(state: str, current: bool, minutes_ago: int) -> ContainerRow:
+    return ContainerRow(
+        ref=uuid.uuid4().hex,
+        name="x",
+        container_id=None,
+        node=None,
+        node_id=None,
+        state=state,
+        desired_state=None,
+        status=None,
+        health=None,
+        error=None,
+        image="busybox",
+        updated_at=datetime.now(UTC) - timedelta(minutes=minutes_ago),
+        current=current,
+    )
+
+
+def test_stack_health_rules() -> None:
+    assert stack_health([]).state == "stopped"
+    assert stack_health([row("web", 2, 2)]).state == "healthy"
+    short = stack_health([row("web", 1, 2)])
+    assert (short.state, short.problems) == ("degraded", ["web: 1/2 running"])
+    assert stack_health([row("web", 0, 2)]).state == "down"
+
+    looping = stack_health(
+        [row("job", 1, 1, task_row("failed", False, 1), task_row("failed", False, 2))]
+    )
+    assert (looping.state, looping.problems) == (
+        "degraded",
+        ["job: 2 failed in the last 10 minutes"],
+    )
+    old = stack_health([row("job", 1, 1, task_row("failed", False, 30))])
+    assert old.state == "healthy"
+
+
+async def test_health_is_reported_per_stack(world: World) -> None:
+    data = (await world.client.get(f"/api/stacks/{world.blog}/containers")).json()
+    assert data["health"] == {
+        "state": "degraded",
+        "problems": ["web: 1/2 running", "web: 1 exited"],
+    }
+
+    health = (await world.client.get("/api/stacks-health")).json()
+    assert health[str(world.blog)]["state"] == "degraded"
+    assert health[str(world.shop)]["state"] in {"healthy", "degraded"}

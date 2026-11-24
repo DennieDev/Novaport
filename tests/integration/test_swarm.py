@@ -290,16 +290,16 @@ async def test_preflight_refuses_a_port_another_stack_publishes(
     novaport: Novaport, tmp_path: Path
 ) -> None:
     other = f"{novaport.stack}x"
-    (tmp_path / "other.yaml").write_text(compose(extra='    ports: ["18080:80"]\n'))
+    (tmp_path / "other.yaml").write_text(compose(extra='    ports: ["28431:80"]\n'))
     docker("stack", "deploy", "--detach=true", "-c", str(tmp_path / "other.yaml"), other)
     try:
-        novaport.write(compose(extra='    ports: ["18080:80"]\n'))
+        novaport.write(compose(extra='    ports: ["28431:80"]\n'))
         await novaport.add_repository()
         await novaport.push("Add app")
         d = await novaport.deployed()
         assert d["status"] == "failed"
         assert d["stage"] == "preflight"
-        assert d["error"] == f"Port 18080/tcp is already published by {other}_app."
+        assert d["error"] == f"Port 28431/tcp is already published by {other}_app."
     finally:
         _cleanup(other)
 

@@ -6,9 +6,10 @@
 	import { STACK_TOPICS } from '#lib/live.svelte.ts';
 	import { poll } from '#lib/poll.svelte.ts';
 	import { can } from '#lib/session.svelte.ts';
-	import type { Stack, UnmanagedStack } from '#lib/types.ts';
+	import type { Stack, StackHealth, UnmanagedStack } from '#lib/types.ts';
 
 	const stacks = poll<Stack[]>(() => '/stacks', 5000, { topics: STACK_TOPICS });
+	const health = poll<Record<string, StackHealth>>(() => '/stacks-health', 10_000);
 	const unmanaged = can('admin')
 		? poll<UnmanagedStack[]>(() => '/unmanaged', 60_000, { topics: ['stacks'] })
 		: undefined;
@@ -33,6 +34,7 @@
 		<thead>
 			<tr>
 				<th>Stack</th>
+				<th>Health</th>
 				<th>Repository</th>
 				<th>Type</th>
 				<th>Mode</th>
@@ -47,6 +49,12 @@
 						<a class="name" href="/stacks/{s.id}">{s.name}</a>
 						{#if s.removed_at}<Badge value="removed from git" tone="muted" />{/if}
 						{#if s.config_error}<Badge value="settings error" tone="bad" />{/if}
+					</td>
+					<td>
+						{#if health.data?.[s.id]}
+							{@const h = health.data[s.id]}
+							<span title={h.problems.join('\n')}><Badge value={h.state} /></span>
+						{:else}<span class="muted">–</span>{/if}
 					</td>
 					<td class="muted">{s.repository.name}</td>
 					<td>{s.type}</td>
@@ -70,7 +78,7 @@
 				</tr>
 			{:else}
 				<tr>
-					<td colspan="6" class="muted">
+					<td colspan="7" class="muted">
 						No stacks yet. <a href="/repositories">Add a repository</a> with one folder per stack.
 					</td>
 				</tr>

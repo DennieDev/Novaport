@@ -13,7 +13,7 @@
 	import { onStack, STACK_TOPICS } from '#lib/live.svelte.ts';
 	import { poll } from '#lib/poll.svelte.ts';
 	import { can } from '#lib/session.svelte.ts';
-	import type { Deployment, ImageCheck, Revision, Stack } from '#lib/types.ts';
+	import type { Deployment, ImageCheck, Revision, Stack, StackContainers } from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
 	const tab = $derived(page.url.searchParams.get('tab') ?? 'services');
@@ -29,6 +29,8 @@
 		topics: ['deployments'],
 		match: onStack(() => id)
 	});
+	const containers = poll<StackContainers>(() => `/stacks/${id}/containers`, 5000);
+	const health = $derived(containers.data?.health);
 	const updates = poll<ImageCheck[]>(() => `/stacks/${id}/updates`, 60_000, {
 		topics: ['image_checks'],
 		match: onStack(() => id)
@@ -101,6 +103,7 @@
 		<div>
 			<h1>
 				{s.name}
+				{#if health}<Badge value={health.state} />{/if}
 				<Badge value={s.type === 'swarm' ? 'swarm' : 'compose'} tone="muted" />
 				{#if s.removed_at}<Badge value="removed from git" tone="bad" />{/if}
 				{#if s.drift?.length}<Badge value="drifted" tone="warn" />{/if}
@@ -136,6 +139,12 @@
 		</div>
 	</div>
 	{#if error}<p class="error">{error}</p>{/if}
+	{#if health?.problems.length}
+		<div class="panel problems" class:down={health.state === 'down'}>
+			<strong>{health.state === 'down' ? 'Not running' : 'Unhealthy'}</strong>
+			{#each health.problems as problem (problem)}<span>{problem}</span>{/each}
+		</div>
+	{/if}
 	{#if restarted}<p class="muted">Restart started.</p>{/if}
 
 	{#if s.removed_at}
@@ -248,7 +257,15 @@
 			</p>
 		{/if}
 	{:else}
-		<StackServices stackId={s.id} operator={can('operator', s.id)} />
+		<Status loading={containers.loading && !containers.data} error={containers.error} />
+		{#if containers.data}
+			<StackServices
+				stackId={s.id}
+				data={containers.data}
+				operator={can('operator', s.id)}
+				onchange={containers.refresh}
+			/>
+		{/if}
 	{/if}
 {/if}
 
@@ -284,6 +301,25 @@
 	}
 	h2.first {
 		margin-top: 0;
+	}
+	.problems {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem 1.25rem;
+		align-items: baseline;
+		border-color: var(--warn);
+		border-left: 3px solid var(--warn);
+		margin-bottom: 1rem;
+		padding: 0.6rem 1rem;
+	}
+	.problems strong {
+		color: var(--warn);
+	}
+	.problems.down {
+		border-color: var(--bad);
+	}
+	.problems.down strong {
+		color: var(--bad);
 	}
 	.drift {
 		border-color: var(--warn);

@@ -3,8 +3,8 @@
 	let { value, tone }: { value: string; tone?: 'ok' | 'warn' | 'bad' | 'muted' } = $props();
 
 	const good = ['succeeded', 'success', 'running', 'ready', 'active', 'complete', 'completed', 'reachable', 'updated', 'healthy'];
-	const bad = ['failed', 'denied', 'rejected', 'down', 'unreachable', 'orphaned', 'paused', 'rollback_paused', 'exited', 'dead', 'unhealthy'];
-	const muted = ['cancelled', 'shutdown', 'drain', 'inactive', 'remove', 'created'];
+	const bad = ['failed', 'denied', 'rejected', 'down', 'unreachable', 'orphaned', 'paused', 'rollback_paused', 'exited', 'dead', 'unhealthy', 'down'];
+	const muted = ['cancelled', 'shutdown', 'drain', 'inactive', 'remove', 'created', 'stopped'];
 
 	const resolved = $derived(
 		tone ??

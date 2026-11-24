@@ -7,12 +7,13 @@ import re
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, WebSocket, status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from websockets.exceptions import InvalidHandshake, InvalidStatus
@@ -71,11 +72,51 @@ class ServiceRow(BaseModel):
     containers: list[ContainerRow]
 
 
+class StackHealth(BaseModel):
+    # healthy, degraded, down, or stopped (nothing of the stack runs)
+    state: str
+    problems: list[str]
+
+
 class StackContainers(BaseModel):
     type: StackType
     endpoint: str | None
     agents: bool
+    health: StackHealth
     services: list[ServiceRow]
+
+
+# Failed tasks this recent mark a service as restarting.
+RECENT_FAILURES = timedelta(minutes=10)
+
+
+def stack_health(rows: list[ServiceRow], now: datetime | None = None) -> StackHealth:
+    if not rows:
+        return StackHealth(state="stopped", problems=[])
+    since = (now or datetime.now(UTC)) - RECENT_FAILURES
+    problems: list[str] = []
+    running_any = False
+    for row in rows:
+        running = row.replicas_running or 0
+        running_any = running_any or running > 0
+        if row.replicas_desired is not None and running < row.replicas_desired:
+            problems.append(f"{row.name}: {running}/{row.replicas_desired} running")
+        restarts = sum(
+            1
+            for c in row.containers
+            if not c.current
+            and c.state in ("failed", "rejected")
+            and c.updated_at is not None
+            and c.updated_at > since
+        )
+        if restarts:
+            problems.append(f"{row.name}: {restarts} failed in the last 10 minutes")
+        exited = [c for c in row.containers if c.current and c.state in ("exited", "dead")]
+        if exited and row.mode == "compose":
+            problems.append(f"{row.name}: {len(exited)} exited")
+    if not running_any:
+        return StackHealth(state="down", problems=problems)
+    return StackHealth(state="degraded" if problems else "healthy", problems=problems)
 
 
 class NetworkAddress(BaseModel):
@@ -156,11 +197,43 @@ async def _node_names(reader: ClusterReader) -> dict[str, str]:
         return {}
 
 
-async def _swarm_rows(stack: Stack, reader: ClusterReader) -> list[ServiceRow]:
-    services = await reader.services(label=f"{STACK_LABEL}={stack.name}")
-    names = await _node_names(reader)
+@dataclass
+class Snapshot:
+    """What one Docker host runs, fetched once and shared by every stack on it."""
+
+    services: list[Obj]
+    tasks: list[Obj]
+    node_names: dict[str, str]
+    containers: list[Obj]
+    node_id: str | None
+    host: str | None
+
+
+async def _snapshot(reader: ClusterReader, swarm: bool, compose: bool) -> Snapshot:
+    services: list[Obj] = []
+    tasks: list[Obj] = []
+    names: dict[str, str] = {}
+    if swarm:
+        try:
+            services = await reader.services()
+            tasks = await reader.tasks()
+        except NotSwarmManager:
+            pass
+        names = await _node_names(reader)
+    containers = await reader.containers(COMPOSE_PROJECT) if compose else []
+    node_id, host = await _host(reader)
+    return Snapshot(services, tasks, names, containers, node_id, host)
+
+
+def _swarm_rows(stack: Stack, snap: Snapshot) -> list[ServiceRow]:
+    services = [
+        s
+        for s in snap.services
+        if (s.get("Spec", {}).get("Labels") or {}).get(STACK_LABEL) == stack.name
+    ]
+    names = snap.node_names
     by_service: dict[str, list[Obj]] = {s["ID"]: [] for s in services}
-    for t in await reader.tasks():
+    for t in snap.tasks:
         if t.get("ServiceID") in by_service:
             by_service[t["ServiceID"]].append(t)
     rows = []
@@ -213,9 +286,11 @@ async def _host(reader: ClusterReader) -> tuple[str | None, str | None]:
     return (info.get("Swarm") or {}).get("NodeID") or None, info.get("Name")
 
 
-async def _compose_rows(stack: Stack, reader: ClusterReader) -> list[ServiceRow]:
-    containers = await reader.containers(f"{COMPOSE_PROJECT}={stack.name}")
-    node_id, host = await _host(reader)
+def _compose_rows(stack: Stack, snap: Snapshot) -> list[ServiceRow]:
+    containers = [
+        c for c in snap.containers if (c.get("Labels") or {}).get(COMPOSE_PROJECT) == stack.name
+    ]
+    node_id, host = snap.node_id, snap.host
     grouped: dict[str, list[Obj]] = {}
     for c in containers:
         grouped.setdefault((c.get("Labels") or {}).get(COMPOSE_SERVICE, "?"), []).append(c)
@@ -271,17 +346,51 @@ async def stack_containers(
 ) -> StackContainers:
     stack = await _stack(db, access, stack_id, Role.VIEWER, "stack.view")
     target, reader = _target(request.app, stack)
-    if stack.type == StackType.SWARM:
-        services = await _swarm_rows(stack, reader)
-    else:
-        services = await _compose_rows(stack, reader)
+    swarm = stack.type == StackType.SWARM
+    snap = await _snapshot(reader, swarm=swarm, compose=not swarm)
+    services = _swarm_rows(stack, snap) if swarm else _compose_rows(stack, snap)
     agents = target.agents
     return StackContainers(
         type=stack.type,
         endpoint=stack.endpoint.name if stack.endpoint else None,
         agents=bool(agents and agents.enabled),
+        health=stack_health(services),
         services=services,
     )
+
+
+@router.get("/stacks-health")
+async def stacks_health(request: Request, db: DB, access: CurrentAccess) -> dict[str, StackHealth]:
+    """Health of every stack the user can see, by stack ID. Unreachable hosts are left out."""
+    stacks = [
+        s
+        for s in await db.scalars(select(Stack).where(Stack.removed_at.is_(None)))
+        if access.can(Role.VIEWER, s.id)
+    ]
+    by_endpoint: dict[uuid.UUID | None, list[Stack]] = {}
+    for s in stacks:
+        by_endpoint.setdefault(s.endpoint_id, []).append(s)
+    result: dict[str, StackHealth] = {}
+    for endpoint_id, group in by_endpoint.items():
+        try:
+            target: Target = request.app.state.targets(endpoint_id)
+        except EndpointOffline:
+            continue
+        if target.reader is None:
+            continue
+        kinds = {s.type for s in group}
+        try:
+            snap = await _snapshot(
+                target.reader,
+                swarm=StackType.SWARM in kinds,
+                compose=StackType.COMPOSE in kinds,
+            )
+        except DockerUnavailable:
+            continue
+        for s in group:
+            rows = _swarm_rows(s, snap) if s.type == StackType.SWARM else _compose_rows(s, snap)
+            result[str(s.id)] = stack_health(rows)
+    return result
 
 
 async def _locate(app: FastAPI, stack: Stack, ref: str) -> Located:

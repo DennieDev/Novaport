@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import uuid
 from collections.abc import AsyncIterator
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -58,6 +59,7 @@ def make_settings(**overrides: object) -> Settings:
         "data_dir": Path(tempfile.mkdtemp(dir=TEST_DATA_ROOT)),
         "allow_local_repositories": True,
         "secret_key": SecretStr(TEST_SECRET_KEY),
+        "deploy_stable_for": timedelta(0),
     }
     values.update(overrides)
     return Settings.model_validate(values)

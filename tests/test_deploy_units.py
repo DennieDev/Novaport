@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 import yaml
@@ -10,7 +11,7 @@ from starlette.datastructures import Headers
 
 from novaport.crypto import Cipher, MissingSecretKey, generate_key, generate_ssh_keypair
 from novaport.deploy.compose import ComposeError, add_labels
-from novaport.deploy.converge import _parse_time, service_state
+from novaport.deploy.converge import _parse_time, converge_swarm, service_state
 from novaport.models import DeployMode, StackType
 from novaport.server.api.repositories import check_url
 from novaport.stacks.settings import InvalidSettings, parse_settings, stack_name
@@ -166,3 +167,81 @@ def test_service_states() -> None:
     assert paused.detail == "update paused: task failed"
     job = {"ID": "2", "Spec": {"Name": "migrate", "Mode": {"ReplicatedJob": {}}}}
     assert service_state(job).converged
+
+
+class ScriptedReader:
+    """Serves one stack service whose tasks change from one poll to the next."""
+
+    def __init__(self, polls: list[list[dict[str, Any]]], running: int = 1) -> None:
+        self.polls = polls
+        self.calls = 0
+        self.running = running
+
+    async def services(self, label: str | None = None) -> list[dict[str, Any]]:
+        return [
+            {
+                "ID": "svc",
+                "Spec": {"Name": "shop_job", "Mode": {"Replicated": {"Replicas": 1}}},
+                "ServiceStatus": {"RunningTasks": self.running, "DesiredTasks": 1},
+            }
+        ]
+
+    async def tasks(self, service_id: str | None = None) -> list[dict[str, Any]]:
+        tasks = self.polls[min(self.calls, len(self.polls) - 1)]
+        self.calls += 1
+        return tasks
+
+
+STARTED = datetime(2026, 11, 24, 12, 0, tzinfo=UTC)
+
+
+def failed_task(task_id: str) -> dict[str, Any]:
+    return {
+        "ID": task_id,
+        "ServiceID": "svc",
+        "CreatedAt": "2026-11-24T12:00:05Z",
+        "Status": {"State": "failed", "Err": "task: non-zero exit (1)"},
+    }
+
+
+async def test_a_crash_loop_fails_the_rollout() -> None:
+    reader = ScriptedReader([[], [failed_task("t1")], [failed_task("t1"), failed_task("t2")]])
+    outcome = await converge_swarm(
+        reader,  # type: ignore[arg-type]
+        "shop",
+        started=STARTED,
+        timeout=5,
+        stable_for=1,
+        interval=0.01,
+    )
+    assert not outcome.ok
+    assert outcome.errors[0] == "shop_job keeps failing after it starts"
+    assert "task: non-zero exit (1)" in outcome.errors[1]
+
+
+async def test_a_single_failure_restarts_the_stable_window() -> None:
+    reader = ScriptedReader([[], [failed_task("t1")]])
+    outcome = await converge_swarm(
+        reader,  # type: ignore[arg-type]
+        "shop",
+        started=STARTED,
+        timeout=5,
+        stable_for=0.05,
+        interval=0.01,
+    )
+    assert outcome.ok
+    assert reader.calls >= 3
+
+
+async def test_services_that_never_settle_time_out() -> None:
+    reader = ScriptedReader([[]], running=0)
+    outcome = await converge_swarm(
+        reader,  # type: ignore[arg-type]
+        "shop",
+        started=STARTED,
+        timeout=0.05,
+        stable_for=0,
+        interval=0.01,
+    )
+    assert not outcome.ok
+    assert outcome.errors[0].startswith("Timed out waiting for shop_job")
