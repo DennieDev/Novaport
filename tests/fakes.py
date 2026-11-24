@@ -160,6 +160,8 @@ class FakeReader:
     def __init__(self) -> None:
         self.service_list: list[Obj] = [SERVICE_WEB, SERVICE_AGENT]
         self.container_list: list[Obj] = []
+        # Inspect output by container ID; falls back to the list entry.
+        self.container_inspect: dict[str, Obj] = {}
         self.task_list: list[Obj] = TASKS
         self.network_list: list[Obj] = NETWORKS
         self.secret_list: list[Obj] = SECRETS
@@ -195,6 +197,8 @@ class FakeReader:
 
     async def container(self, container_id: str) -> Obj:
         self._check()
+        if container_id in self.container_inspect:
+            return self.container_inspect[container_id]
         for c in self.container_list:
             if c.get("Id") == container_id:
                 return c

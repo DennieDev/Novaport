@@ -53,6 +53,19 @@ test('deploys a stack and follows it to the end', async () => {
 	await expect(page.getByText('All services are running.')).toBeVisible();
 });
 
+test('shows the containers of the stack with their logs', async () => {
+	await page.getByRole('link', { name: `← ${stack}` }).click();
+	const rows = page.locator('section.service tbody tr');
+	await expect(rows).toHaveCount(2);
+	await expect(rows.first()).toContainText('running');
+	await rows.first().getByRole('link', { name: 'Logs' }).click();
+	await expect(page).toHaveURL(/\/containers\/.+\?tab=logs/);
+	await expect(page.locator('nav.tabs a.active')).toHaveText('Logs');
+	await expect(page.locator('pre')).toBeVisible();
+	await page.locator('nav.tabs').getByRole('link', { name: 'Info' }).click();
+	await expect(page.getByRole('heading', { name: 'Mounts' })).toBeVisible();
+});
+
 test('shows changes made elsewhere without waiting for a poll', async () => {
 	await page.goto('/repositories');
 	await expect(page.getByRole('link', { name: 'infra' })).toBeVisible();

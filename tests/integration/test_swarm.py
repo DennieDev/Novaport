@@ -469,3 +469,28 @@ async def test_adopted_stack_deploys_without_restarting_tasks(
         assert after == before, "adopting should not replace running tasks"
     finally:
         _cleanup(legacy)
+
+
+@needs_agents
+async def test_stack_page_shows_containers_with_logs(novaport: Novaport) -> None:
+    novaport.write(compose(command="sh -c 'echo hello from the app; sleep 3600'", replicas=2))
+    await novaport.add_repository()
+    await novaport.push("Add app")
+    assert (await novaport.deployed())["status"] == "succeeded"
+
+    info = await novaport.stack_info()
+    data = (await novaport.client.get(f"/api/stacks/{info['id']}/containers")).json()
+    [app] = data["services"]
+    running = [c for c in app["containers"] if c["state"] == "running"]
+    assert len(running) == 2
+    assert {c["name"] for c in running} == {f"{novaport.stack}_app.1", f"{novaport.stack}_app.2"}
+
+    for c in running:
+        logs = await novaport.client.get(f"/api/stacks/{info['id']}/containers/{c['ref']}/logs")
+        assert logs.status_code == 200, logs.text
+        assert any("hello from the app" in line for line in logs.json()["lines"])
+    detail = (
+        await novaport.client.get(f"/api/stacks/{info['id']}/containers/{running[0]['ref']}")
+    ).json()
+    assert detail["service"] == "app"
+    assert detail["node"] in {"manager", "worker1", "worker2"}

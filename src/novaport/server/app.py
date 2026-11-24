@@ -53,6 +53,7 @@ from novaport.server.api import (
     stacks,
     webhooks,
 )
+from novaport.server.api import containers as containers_api
 from novaport.server.api import endpoints as endpoints_api
 from novaport.server.api import live as live_api
 from novaport.server.api import notifications as notifications_api
@@ -305,6 +306,8 @@ def create_app(
     app.include_router(agents_api.ws_router)
     app.include_router(live_api.ws_router)
     app.include_router(adopt_api.router)
+    app.include_router(containers_api.router)
+    app.include_router(containers_api.ws_router)
 
     if settings.static_dir is not None:
         app.mount("/", SPAStaticFiles(directory=settings.static_dir, html=True), name="frontend")

@@ -471,3 +471,71 @@ export interface GeneratedCompose {
 	compose: string;
 	notes: string[];
 }
+
+export interface Mount {
+	type: string;
+	source: string | null;
+	target: string;
+	read_only: boolean;
+}
+
+export interface ContainerRow {
+	ref: string;
+	name: string;
+	container_id: string | null;
+	node: string | null;
+	node_id: string | null;
+	state: string;
+	desired_state: string | null;
+	status: string | null;
+	health: string | null;
+	error: string | null;
+	image: string;
+	updated_at: string | null;
+	current: boolean;
+}
+
+export interface ServiceRow {
+	name: string;
+	full_name: string;
+	service_id: string | null;
+	image: string;
+	mode: string;
+	replicas_desired: number | null;
+	replicas_running: number | null;
+	ports: Port[];
+	update_status: UpdateStatus | null;
+	containers: ContainerRow[];
+}
+
+export interface StackContainers {
+	type: 'swarm' | 'compose';
+	endpoint: string | null;
+	agents: boolean;
+	services: ServiceRow[];
+}
+
+export interface ContainerInfo {
+	ref: string;
+	name: string;
+	service: string;
+	container_id: string | null;
+	node: string | null;
+	state: string;
+	status: string | null;
+	health: string | null;
+	health_log: string | null;
+	error: string | null;
+	exit_code: number | null;
+	image: string;
+	command: string[];
+	env: string[];
+	labels: Record<string, string>;
+	mounts: Mount[];
+	ports: Port[];
+	networks: { name: string; addresses: string[] }[];
+	restart_count: number | null;
+	created_at: string | null;
+	started_at: string | null;
+	finished_at: string | null;
+}

@@ -146,7 +146,9 @@ async def task_logs(
     )
 
 
-async def _bridge(browser: WebSocket, agent: ClientConnection) -> None:
+async def bridge(browser: WebSocket, agent: ClientConnection) -> None:
+    """Relays messages between a browser socket and an agent socket until either closes."""
+
     async def downstream() -> None:
         async for message in agent:
             if isinstance(message, bytes):
@@ -240,7 +242,7 @@ async def _proxy_task_socket(
         async with agents.websocket(node_id, path) as agent:
             # Recorded on connect: the handler can be cancelled when the browser goes away.
             await audit(Outcome.SUCCESS)
-            await _bridge(websocket, agent)
+            await bridge(websocket, agent)
     except (AgentUnavailable, OSError, InvalidHandshake, InvalidStatus) as exc:
         log.warning("Agent connection for task %s failed: %s", task_id, exc)
         await audit(Outcome.FAILED, error=str(exc)[:500])

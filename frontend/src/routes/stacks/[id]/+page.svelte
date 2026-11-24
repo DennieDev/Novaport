@@ -5,7 +5,9 @@
 	import { api, errorMessage } from '#lib/api.ts';
 	import Badge from '#lib/components/Badge.svelte';
 	import DeploymentRow from '#lib/components/DeploymentRow.svelte';
+	import Icon from '#lib/components/Icon.svelte';
 	import ImageUpdates from '#lib/components/ImageUpdates.svelte';
+	import StackServices from '#lib/components/StackServices.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago } from '#lib/format.ts';
 	import { onStack, STACK_TOPICS } from '#lib/live.svelte.ts';
@@ -86,12 +88,50 @@
 	}
 </script>
 
-<p><a href="/stacks">← Stacks</a></p>
+<p class="crumbs"><a href="/stacks">Stacks</a></p>
 <Status loading={stack.loading && !stack.data} error={stack.error} />
 
 {#if stack.data}
 	{@const s = stack.data}
-	<h1>{s.name}</h1>
+	<div class="page-header">
+		<div>
+			<h1>
+				{s.name}
+				<Badge value={s.type === 'swarm' ? 'swarm' : 'compose'} tone="muted" />
+				{#if s.removed_at}<Badge value="removed from git" tone="bad" />{/if}
+				{#if s.drift?.length}<Badge value="drifted" tone="warn" />{/if}
+			</h1>
+			<p class="subtitle">
+				<a href="/repositories/{s.repository.id}">{s.repository.name}</a> · <code>{s.path}</code>
+				· {s.endpoint ?? 'local'}
+			</p>
+		</div>
+		<div class="toolbar">
+			{#if can('operator', s.id)}
+				<button
+					class="primary"
+					onclick={() => deploy()}
+					disabled={busy || !s.latest_revision || !!s.removed_at}
+				>
+					<Icon name="deploy" size={14} />Deploy latest
+				</button>
+				<button onclick={restart} disabled={busy || !!s.removed_at}>
+					<Icon name="restart" size={14} />Restart
+				</button>
+			{/if}
+			{#if !s.removed_at}
+				<a class="button" href="/stacks/{s.id}/edit">
+					<Icon name="edit" size={14} />{can('editor', s.id) ? 'Edit files' : 'Files'}
+				</a>
+				<a class="button" href="/stacks/{s.id}/secrets"><Icon name="secrets" size={14} />Secrets</a>
+			{/if}
+			{#if can('admin')}
+				<a class="button" href="/access/bindings?stack={s.id}"><Icon name="access" size={14} />Access</a>
+			{/if}
+		</div>
+	</div>
+	{#if error}<p class="error">{error}</p>{/if}
+	{#if restarted}<p class="muted">Restart started.</p>{/if}
 
 	{#if s.removed_at}
 		<p class="error">
@@ -104,36 +144,40 @@
 		<p class="muted">New revisions are ignored until novaport.yaml is fixed.</p>
 	{/if}
 
-	<div class="panel">
-		<dl class="kv">
-			<dt>Repository</dt>
-			<dd><a href="/repositories/{s.repository.id}">{s.repository.name}</a> · <code>{s.path}</code></dd>
-			<dt>Type</dt>
-			<dd>{s.type === 'swarm' ? 'Swarm stack' : 'Compose project'}</dd>
-			<dt>Endpoint</dt>
-			<dd>
-				{#if s.endpoint}<a href="/endpoints">{s.endpoint}</a>{:else}local{/if}
-			</dd>
-			<dt>Deploy mode</dt>
-			<dd>{s.deploy_mode}</dd>
-			<dt>Edits</dt>
-			<dd>{s.edit_mode === 'pr' ? 'pull request' : 'commit to branch'}</dd>
-			<dt>Running</dt>
-			<dd>
-				{#if s.last_good_revision}
-					<code>{s.last_good_revision.commit.slice(0, 10)}</code>
-					{s.last_good_revision.message}
-				{:else}<span class="muted">never deployed by Novaport</span>{/if}
-			</dd>
-			<dt>Latest in git</dt>
-			<dd>
-				{#if s.latest_revision}
+	<div class="summary">
+		<div class="panel">
+			<div class="label">Running</div>
+			{#if s.last_good_revision}
+				<div><code>{s.last_good_revision.commit.slice(0, 10)}</code> {s.last_good_revision.message}</div>
+			{:else}<div class="muted">never deployed by Novaport</div>{/if}
+		</div>
+		<div class="panel">
+			<div class="label">Latest in git</div>
+			{#if s.latest_revision}
+				<div>
 					<code>{s.latest_revision.commit.slice(0, 10)}</code>
 					{s.latest_revision.message}
-					<span class="muted">by {s.latest_revision.author}, {ago(s.latest_revision.committed_at)}</span>
-				{:else}–{/if}
-			</dd>
-		</dl>
+					{#if s.latest_revision.id !== s.last_good_revision?.id}<Badge value="not deployed" />{/if}
+				</div>
+				<div class="muted">{s.latest_revision.author}, {ago(s.latest_revision.committed_at)}</div>
+			{:else}<div>–</div>{/if}
+		</div>
+		<div class="panel">
+			<div class="label">Mode</div>
+			<div>Deploy: {s.deploy_mode}</div>
+			<div class="muted">Edits: {s.edit_mode === 'pr' ? 'pull request' : 'commit to branch'}</div>
+		</div>
+		<div class="panel">
+			<div class="label">Last deployment</div>
+			{#if s.last_deployment}
+				<div>
+					<a href="/deployments/{s.last_deployment.id}">
+						<Badge value={s.last_deployment.status.replace('_', ' ')} />
+					</a>
+				</div>
+				<div class="muted">{ago(s.last_deployment.created_at)}</div>
+			{:else}<div class="muted">none</div>{/if}
+		</div>
 	</div>
 
 	{#if s.drift?.length}
@@ -149,22 +193,7 @@
 		</div>
 	{/if}
 
-	<p class="actions">
-		{#if can('operator', s.id)}
-			<button onclick={() => deploy()} disabled={busy || !s.latest_revision || !!s.removed_at}>
-				Deploy latest
-			</button>
-			<button onclick={restart} disabled={busy || !!s.removed_at}>Restart</button>
-		{/if}
-		{#if !s.removed_at}
-			<a href="/stacks/{s.id}/edit">{can('editor', s.id) ? 'Edit files' : 'Files'}</a>
-			<a href="/stacks/{s.id}/secrets">Secrets</a>
-		{/if}
-		<a href="/services?stack={s.name}">Services</a>
-		{#if can('admin')}<a href="/access/bindings?stack={s.id}">Access</a>{/if}
-		{#if error}<span class="error">{error}</span>{/if}
-		{#if restarted}<span class="muted">Restart started.</span>{/if}
-	</p>
+	<StackServices stackId={s.id} operator={can('operator', s.id)} />
 
 	<h2>Image updates</h2>
 	{#if updates.data?.length}
@@ -221,6 +250,23 @@
 {/if}
 
 <style>
+	.summary {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+		gap: 0.75rem;
+	}
+	.summary .panel {
+		padding: 0.75rem 1rem;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+	.label {
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--muted);
+		margin-bottom: 0.3rem;
+	}
 	.drift {
 		border-color: var(--warn);
 		margin-top: 1rem;
@@ -228,12 +274,6 @@
 	.drift ul {
 		margin: 0.5rem 0 0;
 		padding-left: 1.2rem;
-	}
-	.actions {
-		display: flex;
-		gap: 1rem;
-		align-items: center;
-		margin-top: 1rem;
 	}
 	pre.error {
 		white-space: pre-wrap;
