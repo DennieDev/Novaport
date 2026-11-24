@@ -117,6 +117,17 @@ Checks run every six hours (`NOVAPORT_UPDATE_INTERVAL`) and within a minute of a
 stack in git. Commits and pull requests go through the stack's deploy mode like any other change.
 Pull requests need a forge set on the repository (GitHub, GitLab, or Gitea/Forgejo).
 
+## Stacks deployed without Novaport
+
+Stacks → "Add them to git" lists Swarm stacks and Compose projects on your hosts that no
+repository describes. Novaport writes a compose file from what is running, which you review and
+commit to a repository. It starts in `deploy: manual`, so nothing changes until you deploy it,
+and a faithful file updates the stack in place without restarting its tasks.
+
+Check the generated file before committing: environment variables are copied as they are (move
+passwords to `secrets.env`), secrets and configs become external references, and for Compose
+projects the image's own environment variables and labels show up too.
+
 ## What Novaport adds
 
 Before deploying, Novaport labels every service with `novaport.stack`, `novaport.revision`, and

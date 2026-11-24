@@ -3,6 +3,7 @@
 
 import io
 import tempfile
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
@@ -334,6 +335,51 @@ class StackEditor:
                     mode=mode,
                     branch=branch,
                     pr_body=pr_body,
+                )
+                await db.commit()
+                return result
+
+    async def add_stack(
+        self,
+        repository_id: uuid.UUID,
+        name: str,
+        stack_type: StackType,
+        files: dict[str, str],
+        user: User,
+        message: str,
+    ) -> EditResult:
+        """Commit a new stack folder, the way edits to that stack would reach git."""
+        encoded: dict[str, bytes | None] = {check_path(p): c.encode() for p, c in files.items()}
+        async with self.sessionmaker() as db:
+            repo = await db.get(Repository, repository_id)
+            if repo is None:
+                raise EditError("The repository no longer exists.")
+            root = repo.stacks_root.strip("/")
+            # Never added to the session: the real row comes from syncing the new commit.
+            stack = Stack(
+                id=uuid.uuid4(),
+                repository_id=repo.id,
+                path=f"{root}/{name}" if root else name,
+                name=name,
+                type=stack_type,
+                edit_mode=repo.default_edit_mode,
+            )
+            async with lock(self.engine, f"sync:{repo.id}"):
+                tip = await self._fetch(repo)
+                mirror = self._mirror(repo)
+                if await mirror.list_files(tip, stack.path):
+                    raise EditError(f"{stack.path} already exists in {repo.name}.")
+                await self._validate(mirror, stack, tip, encoded)
+                result = await self._publish(
+                    db,
+                    repo,
+                    stack,
+                    tip,
+                    encoded,
+                    message,
+                    author_for(user),
+                    tip,
+                    pr_body=f"Adds {name}, which was deployed without Novaport until now.",
                 )
                 await db.commit()
                 return result

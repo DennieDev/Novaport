@@ -5,9 +5,13 @@
 	import { ago } from '#lib/format.ts';
 	import { STACK_TOPICS } from '#lib/live.svelte.ts';
 	import { poll } from '#lib/poll.svelte.ts';
-	import type { Stack } from '#lib/types.ts';
+	import { can } from '#lib/session.svelte.ts';
+	import type { Stack, UnmanagedStack } from '#lib/types.ts';
 
 	const stacks = poll<Stack[]>(() => '/stacks', 5000, { topics: STACK_TOPICS });
+	const unmanaged = can('admin')
+		? poll<UnmanagedStack[]>(() => '/unmanaged', 60_000, { topics: ['stacks'] })
+		: undefined;
 
 	function behind(s: Stack): boolean {
 		return !!s.latest_revision && s.latest_revision.id !== s.last_good_revision?.id;
@@ -16,6 +20,13 @@
 
 <h1>Stacks</h1>
 <Status loading={stacks.loading && !stacks.data} error={stacks.error} />
+{#if unmanaged?.data?.length}
+	<p class="muted">
+		{unmanaged.data.length} stack{unmanaged.data.length === 1 ? '' : 's'} running here
+		{unmanaged.data.length === 1 ? 'was' : 'were'} deployed without Novaport.
+		<a href="/stacks/unmanaged">Add them to git</a>
+	</p>
+{/if}
 
 {#if stacks.data}
 	<table>

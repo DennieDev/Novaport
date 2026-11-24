@@ -42,6 +42,7 @@ from novaport.registries.client import Login, RegistryClient
 from novaport.registries.store import all_logins, login_lookup
 from novaport.retention import Retention
 from novaport.server.api import access as access_api
+from novaport.server.api import adopt as adopt_api
 from novaport.server.api import agents as agents_api
 from novaport.server.api import (
     auth,
@@ -303,6 +304,7 @@ def create_app(
     app.include_router(agents_api.router)
     app.include_router(agents_api.ws_router)
     app.include_router(live_api.ws_router)
+    app.include_router(adopt_api.router)
 
     if settings.static_dir is not None:
         app.mount("/", SPAStaticFiles(directory=settings.static_dir, html=True), name="frontend")

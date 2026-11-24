@@ -95,7 +95,7 @@ async def _stack(db: DB, stack_id: uuid.UUID) -> Stack:
     return stack
 
 
-def _result(request: Request, result: EditResult) -> SaveResult:
+def save_result(request: Request, result: EditResult) -> SaveResult:
     queued = result.sync.queued_deployments if result.sync else 0
     if queued and request.app.state.jobs is not None:
         request.app.state.jobs.wake()
@@ -187,7 +187,7 @@ async def save_files(
         await _audit_save(db, access, "stack.edit", stack, details, error=exc)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     await _audit_save(db, access, "stack.edit", stack, details, result)
-    return _result(request, result)
+    return save_result(request, result)
 
 
 @router.get("/stacks/{stack_id}/secrets")
@@ -248,7 +248,7 @@ async def save_secrets(
         await _audit_save(db, access, "secrets.edit", stack, details, error=exc)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     await _audit_save(db, access, "secrets.edit", stack, details, result)
-    return _result(request, result)
+    return save_result(request, result)
 
 
 @router.get("/settings/sops")

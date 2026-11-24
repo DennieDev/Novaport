@@ -393,3 +393,79 @@ async def test_compose_stack_runs_on_the_host(novaport: Novaport) -> None:
         f"label=com.docker.compose.project={novaport.stack}",
     )
     assert running.split() == [f"{novaport.stack}-app-1"]
+
+
+LEGACY = """services:
+  api:
+    image: busybox:1.37
+    command: ["sh", "-c", "echo $$GREETING; sleep 3600"]
+    environment:
+      GREETING: hello
+    volumes:
+      - data:/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 5s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 64M
+      update_config:
+        order: start-first
+  worker:
+    image: busybox:1.37
+    command: sleep 3600
+    networks: [backend]
+    deploy:
+      mode: global
+networks:
+  backend:
+    driver: overlay
+volumes:
+  data:
+"""
+
+
+async def test_adopted_stack_deploys_without_restarting_tasks(
+    novaport: Novaport, tmp_path: Path
+) -> None:
+    legacy = f"{novaport.stack}legacy"
+    (tmp_path / "legacy.yaml").write_text(LEGACY)
+    docker("stack", "deploy", "--detach=false", "-c", str(tmp_path / "legacy.yaml"), legacy)
+    try:
+        before = set(
+            docker("stack", "ps", "--quiet", "--filter", "desired-state=running", legacy).split()
+        )
+        assert len(before) == 5
+
+        novaport.write(compose())
+        await novaport.add_repository(mode="manual")
+        await novaport.push("Add app")
+        found = (await novaport.client.get("/api/unmanaged")).json()
+        assert {
+            "name": legacy,
+            "type": "swarm",
+            "endpoint": None,
+            "services": 2,
+            "name_taken": False,
+        } in found
+
+        generated = (await novaport.client.get(f"/api/unmanaged/swarm/{legacy}")).json()
+        response = await novaport.client.post(
+            f"/api/unmanaged/swarm/{legacy}/adopt",
+            json={"repository_id": novaport.repo_id, "compose": generated["compose"]},
+        )
+        assert response.status_code == 200, response.text
+
+        adopted = Novaport(novaport.client, novaport.origin, legacy)
+        d = await adopted.deploy()
+        assert d["status"] == "succeeded", d["error"]
+        assert service(legacy, "api")["Spec"]["Labels"]["novaport.stack"] == legacy
+        after = set(
+            docker("stack", "ps", "--quiet", "--filter", "desired-state=running", legacy).split()
+        )
+        assert after == before, "adopting should not replace running tasks"
+    finally:
+        _cleanup(legacy)

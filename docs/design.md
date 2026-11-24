@@ -513,6 +513,13 @@ cover the manager the agent runs on.
    channels, drift detection.
 7. **Endpoints.** Standalone hosts and other Swarm clusters through outbound edge agents.
 
-## Open questions
+## Adopting existing stacks
 
-- Does Novaport need to read stacks that were deployed outside it, to help with migration?
+Swarm stacks and Compose projects that no Novaport stack deploys are listed under Stacks. For
+each, Novaport rebuilds a compose file from the running service or container specs: stack
+prefixes are removed from networks, volumes, secrets, and configs; secrets and configs become
+external references, since their values can't be read back; `$` is escaped; values Swarm fills
+in by default are left out. An admin reviews and edits the file, and Novaport commits it with a
+`novaport.yaml` (`deploy: manual` unless chosen otherwise) through the repository's usual edit
+mode. The first deploy updates the running stack in place, and when the file matches what runs,
+no task is replaced.

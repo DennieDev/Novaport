@@ -193,6 +193,13 @@ class FakeReader:
             return [c for c in self.container_list if key in c.get("Labels", {})]
         return [c for c in self.container_list if c.get("Labels", {}).get(key) == value]
 
+    async def container(self, container_id: str) -> Obj:
+        self._check()
+        for c in self.container_list:
+            if c.get("Id") == container_id:
+                return c
+        raise NotFound(container_id)
+
     async def service(self, service_id: str) -> Obj:
         self._check()
         for s in self.service_list:

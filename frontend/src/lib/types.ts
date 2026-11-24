@@ -458,3 +458,16 @@ export interface EndpointKey {
 	docker_command: string;
 	swarm_command: string;
 }
+
+export interface UnmanagedStack {
+	name: string;
+	type: 'swarm' | 'compose';
+	endpoint: string | null;
+	services: number;
+	name_taken: boolean;
+}
+
+export interface GeneratedCompose {
+	compose: string;
+	notes: string[];
+}
