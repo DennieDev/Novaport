@@ -26,6 +26,7 @@ from tests.fakes import FakeReader
 
 TEST_DATABASE_URL = os.environ.get("NOVAPORT_TEST_DATABASE_URL")
 SOPS_BINARY = os.environ.get("NOVAPORT_TEST_SOPS") or shutil.which("sops")
+TEST_DOCKER_HOST = os.environ.get("NOVAPORT_TEST_DOCKER_HOST")
 
 # Nothing listens on port 1, so connections fail immediately.
 UNREACHABLE_DATABASE_URL = "postgresql+asyncpg://novaport:novaport@127.0.0.1:1/novaport"
@@ -34,11 +35,14 @@ UNREACHABLE_DATABASE_URL = "postgresql+asyncpg://novaport:novaport@127.0.0.1:1/n
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     no_db = pytest.mark.skip(reason="NOVAPORT_TEST_DATABASE_URL is not set")
     no_sops = pytest.mark.skip(reason="sops is not installed (or set NOVAPORT_TEST_SOPS)")
+    no_swarm = pytest.mark.skip(reason="NOVAPORT_TEST_DOCKER_HOST is not set")
     for item in items:
         if "postgres" in item.keywords and not TEST_DATABASE_URL:
             item.add_marker(no_db)
         if "sops" in item.keywords and not SOPS_BINARY:
             item.add_marker(no_sops)
+        if "swarm" in item.keywords and not TEST_DOCKER_HOST:
+            item.add_marker(no_swarm)
 
 
 TEST_SECRET_KEY = generate_key()

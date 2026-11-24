@@ -492,8 +492,9 @@ cover the manager the agent runs on.
 ## Testing
 
 - Unit tests for parsing, diffing, policy evaluation, and conflict handling.
-- Integration tests against a throwaway Swarm (Docker-in-Docker, multiple nodes) and a local git
-  server: full deploy pipeline, pre-flight failures, conflicts, update PRs.
+- Integration tests against a throwaway three-node Swarm (Docker-in-Docker, with an agent on
+  every node) and local git repositories, driven through the API: deploys and updates from git,
+  failed rollouts and rollback, pre-flight failures, drift, secret rotation, and Compose stacks.
 - Frontend: component tests, and a small end-to-end suite against the integration environment.
 
 ## Roadmap

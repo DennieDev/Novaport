@@ -167,6 +167,20 @@ uv run pytest
 Tests marked `postgres` run when `NOVAPORT_TEST_DATABASE_URL` is set, for example
 `postgresql+asyncpg://novaport:novaport@localhost:5432/novaport_test`.
 
+The integration tests in `tests/integration` deploy to a real three-node Swarm running in
+Docker-in-Docker containers (Linux only):
+
+```sh
+docker build -t novaport:dev .
+NOVAPORT_SWARM_AGENT_IMAGE=novaport:dev tests/integration/swarm.sh up > .swarm.env
+set -a; . ./.swarm.env; set +a
+uv run pytest tests/integration
+tests/integration/swarm.sh down
+```
+
+Without `NOVAPORT_SWARM_AGENT_IMAGE` the Swarm runs without agents and the tests that need them
+are skipped.
+
 ## License
 
 AGPL-3.0-or-later. See [LICENSE](LICENSE).
