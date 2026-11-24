@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +15,8 @@ from sqlalchemy.orm import selectinload
 from novaport.crypto import Cipher
 from novaport.deploy.preflight import preflight
 from novaport.git import Identity
-from novaport.models import DeployMode, ImageCheck, Repository, Stack, StackType
+from novaport.jobs import Jobs
+from novaport.models import DeployMode, ImageCheck, Repository, Revision, Stack, StackType
 from novaport.registries.client import RegistryClient
 from novaport.server.app import create_app
 from novaport.sops import Sops
@@ -284,3 +287,56 @@ async def test_registries_api(clean_db: str, registry: FakeRegistry) -> None:
 
         assert (await client.get("/api/updates")).json() == []
         assert (await client.delete(f"/api/registries/{data['id']}")).status_code == 204
+
+
+class RecordingChecker:
+    def __init__(self) -> None:
+        self.checked: list[uuid.UUID] = []
+
+    async def check(self, stack_id: uuid.UUID) -> list[ImageCheck]:
+        self.checked.append(stack_id)
+        return []
+
+
+@pytest.mark.postgres
+async def test_new_revisions_trigger_an_update_check(clean_db: str) -> None:
+    engine = create_async_engine(clean_db)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with maker() as db:
+            repo = Repository(name="infra", url="file:///nowhere", webhook_secret="x")
+            db.add(repo)
+            await db.flush()
+            stack = Stack(repository_id=repo.id, path="stacks/web", name="web")
+            db.add(stack)
+            await db.flush()
+            db.add(
+                Revision(
+                    stack_id=stack.id,
+                    commit="a" * 40,
+                    tree="b" * 40,
+                    committed_at=datetime.now(UTC),
+                )
+            )
+            await db.commit()
+
+        checker = RecordingChecker()
+        jobs = Jobs(engine, maker, None, None, checker)  # type: ignore[arg-type]
+        await jobs.check_updates()
+        await jobs.check_updates()
+        assert checker.checked == [stack.id]
+
+        async with maker() as db:
+            db.add(
+                Revision(
+                    stack_id=stack.id,
+                    commit="c" * 40,
+                    tree="d" * 40,
+                    committed_at=datetime.now(UTC),
+                )
+            )
+            await db.commit()
+        await jobs.check_updates()
+        assert checker.checked == [stack.id, stack.id]
+    finally:
+        await engine.dispose()

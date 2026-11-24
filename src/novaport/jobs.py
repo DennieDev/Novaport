@@ -9,13 +9,13 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from functools import partial
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from novaport.auth.sessions import delete_expired_sessions
 from novaport.deploy.pipeline import Pipeline
 from novaport.locks import try_lock
-from novaport.models import Deployment, DeploymentStatus, Repository, Stack
+from novaport.models import Deployment, DeploymentStatus, Repository, Revision, Stack
 from novaport.monitor import Monitor
 from novaport.retention import Retention, prune
 from novaport.stacks.sync import Syncer
@@ -160,20 +160,30 @@ class Jobs:
             self.request_sync(repo_id)
 
     async def check_updates(self) -> None:
-        """Check stacks whose last update check is older than the interval, one at a time."""
+        """Check stacks one at a time: those whose last check is older than the interval, and
+        those with a revision newer than their last check."""
         if self.updates is None:
             return
         async with try_lock(self.engine, "update-checks") as acquired:
             if not acquired:
                 return
             async with self.sessionmaker() as db:
-                stack_ids = list(
-                    await db.scalars(select(Stack.id).where(Stack.removed_at.is_(None)))
+                stacks = list(
+                    await db.execute(
+                        select(Stack.id, func.max(Revision.created_at))
+                        .outerjoin(Revision, Revision.stack_id == Stack.id)
+                        .where(Stack.removed_at.is_(None))
+                        .group_by(Stack.id)
+                    )
                 )
             now = datetime.now(UTC)
-            for stack_id in stack_ids:
+            for stack_id, changed in stacks:
                 last = self._checked.get(stack_id)
-                if last is not None and now - last < self.update_interval:
+                if (
+                    last is not None
+                    and now - last < self.update_interval
+                    and (changed is None or changed <= last)
+                ):
                     continue
                 self._checked[stack_id] = now
                 await self.updates.check(stack_id)
