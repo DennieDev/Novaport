@@ -12,6 +12,8 @@ from sqlalchemy.orm import selectinload
 
 from novaport.auth.access import admin_count
 from novaport.auth.oidc import OidcClient, OidcError
+from novaport.auth.passwords import WeakPassword
+from novaport.auth.users import NotLocal, set_password
 from novaport.crypto import Cipher, MissingSecretKey
 from novaport.models import (
     AuditEntry,
@@ -131,6 +133,24 @@ async def update_user(user_id: uuid.UUID, body: UserPatch, db: DB, access: Admin
         access.audit(db, "user.disable" if body.disabled else "user.enable", target=user.username)
     await db.commit()
     return (await _users_out(db, [user]))[0]
+
+
+class PasswordReset(BaseModel):
+    new_password: str = Field(min_length=1, max_length=1024)
+
+
+@router.post("/users/{user_id}/password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(
+    user_id: uuid.UUID, body: PasswordReset, db: DB, access: AdminAccess
+) -> None:
+    """Set another local user's password. All their sessions end."""
+    user = await _user(db, user_id)
+    try:
+        await set_password(db, user, body.new_password)
+    except (WeakPassword, NotLocal) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+    access.audit(db, "user.password", target=user.username)
+    await db.commit()
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -33,6 +33,23 @@
 		}
 	}
 
+	let resetting = $state<string | undefined>();
+	let newPassword = $state('');
+	let notice = $state<string | undefined>();
+
+	async function resetPassword(event: SubmitEvent, user: User) {
+		event.preventDefault();
+		error = undefined;
+		try {
+			await api.post(`/users/${user.id}/password`, { new_password: newPassword });
+			notice = `Password of ${user.username} changed; their sessions were logged out.`;
+			resetting = undefined;
+			newPassword = '';
+		} catch (e) {
+			error = errorMessage(e);
+		}
+	}
+
 	async function remove(user: User) {
 		if (!confirm(`Delete ${user.username}? Their roles and group memberships go too.`)) return;
 		error = undefined;
@@ -45,6 +62,7 @@
 	}
 </script>
 
+{#if notice}<p class="muted">{notice}</p>{/if}
 <p class="muted">
 	Users from a login provider appear after their first login. Give them roles directly or through
 	a group under <a href="/access/bindings">Roles</a>.
@@ -87,6 +105,11 @@
 					<td class="muted">{ago(u.last_login_at)}</td>
 					<td class="actions">
 						{#if u.id !== session.user?.id}
+							{#if u.local}
+								<button class="link" onclick={() => ((resetting = u.id), (newPassword = ''))}>
+									set password
+								</button>
+							{/if}
 							<button class="link" onclick={() => setDisabled(u, !u.disabled)}>
 								{u.disabled ? 'enable' : 'disable'}
 							</button>
@@ -94,12 +117,36 @@
 						{/if}
 					</td>
 				</tr>
+				{#if resetting === u.id}
+					<tr>
+						<td colspan="99">
+							<form class="reset" onsubmit={(e) => resetPassword(e, u)}>
+								<label>
+									New password for {u.username}
+									<input type="password" bind:value={newPassword} minlength="12" required autocomplete="new-password" />
+								</label>
+								<button class="primary" type="submit">Set password</button>
+								<button type="button" onclick={() => (resetting = undefined)}>Cancel</button>
+							</form>
+						</td>
+					</tr>
+				{/if}
 			{/each}
 		</tbody>
 	</table>
 {/if}
 
 <style>
+	.reset {
+		display: flex;
+		align-items: flex-end;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+	.reset label {
+		display: grid;
+		gap: 0.25rem;
+	}
 	tr.disabled td {
 		opacity: 0.55;
 	}

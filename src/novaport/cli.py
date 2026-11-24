@@ -8,16 +8,18 @@ import sys
 from collections.abc import Sequence
 
 import uvicorn
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from novaport import __version__
 from novaport.auth.passwords import WeakPassword
-from novaport.auth.users import UserExists, create_admin
+from novaport.auth.users import NotLocal, UserExists, create_admin, set_password
 from novaport.config import get_settings
 from novaport.crypto import generate_key
 from novaport.db import create_engine
 from novaport.edge.agent import run_edge_agent
 from novaport.migrate import upgrade, wait_for_database
+from novaport.models import User
 from novaport.sops import age_recipient, generate_age_key
 
 
@@ -90,6 +92,34 @@ def _create_admin_command(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _set_password(username: str, password: str) -> bool:
+    engine = create_engine(get_settings().database_url.get_secret_value())
+    try:
+        async with async_sessionmaker(engine)() as db:
+            user = await db.scalar(select(User).where(User.username == username))
+            if user is None:
+                return False
+            await set_password(db, user, password)
+            await db.commit()
+            return True
+    finally:
+        await engine.dispose()
+
+
+def _set_password_command(args: argparse.Namespace) -> int:
+    password = _read_password(args.password_stdin)
+    try:
+        found = asyncio.run(_set_password(args.username, password))
+    except (WeakPassword, NotLocal) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    if not found:
+        print(f"No user {args.username!r}.", file=sys.stderr)
+        return 1
+    print(f"Password of {args.username!r} changed; their sessions were logged out.")
+    return 0
+
+
 def _generate_key(_: argparse.Namespace) -> int:
     print(generate_key())
     return 0
@@ -132,6 +162,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--password-stdin", action="store_true", help="read the password from standard input"
     )
     admin.set_defaults(func=_create_admin_command)
+
+    reset = sub.add_parser("set-password", help="set a local user's password")
+    reset.add_argument("username")
+    reset.add_argument(
+        "--password-stdin", action="store_true", help="read the password from standard input"
+    )
+    reset.set_defaults(func=_set_password_command)
 
     key = sub.add_parser("generate-key", help="print a new value for NOVAPORT_SECRET_KEY")
     key.set_defaults(func=_generate_key)

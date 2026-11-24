@@ -15,10 +15,17 @@ from starlette.requests import HTTPConnection
 
 from novaport.auth.access import record
 from novaport.auth.oidc import OidcClient, OidcError, new_pkce
-from novaport.auth.passwords import hash_password, needs_rehash, verify_password
+from novaport.auth.passwords import WeakPassword, hash_password, needs_rehash, verify_password
 from novaport.auth.ratelimit import LoginThrottle
 from novaport.auth.sessions import create_session, delete_session, hash_token, resolve_session
-from novaport.auth.users import claim, claim_values, provision_oidc_user, sync_groups
+from novaport.auth.users import (
+    NotLocal,
+    claim,
+    claim_values,
+    provision_oidc_user,
+    set_password,
+    sync_groups,
+)
 from novaport.crypto import Cipher, MissingSecretKey
 from novaport.models import LoginState, OidcProvider, Outcome, Role, User
 from novaport.server.deps import DB, CurrentAccess, client_ip, get_settings
@@ -35,6 +42,11 @@ OIDC_PATH = "/api/auth/oidc"
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=150)
     password: str = Field(min_length=1, max_length=1024)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=1024)
+    new_password: str = Field(min_length=1, max_length=1024)
 
 
 class Me(BaseModel):
@@ -144,6 +156,27 @@ async def logout(request: Request, response: Response, db: DB) -> None:
             record(db, "auth.logout", user=session.user, ip=client_ip(request))
         await delete_session(db, token)
     response.delete_cookie(settings.session_cookie, path="/")
+
+
+@router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    body: PasswordChange, request: Request, db: DB, access: CurrentAccess
+) -> None:
+    """Change your own password. Your other sessions are logged out."""
+    user = await db.get(User, access.user.id)
+    if user is None or not verify_password(user.password_hash, body.current_password):
+        record(db, "auth.password", user=access.user, ip=client_ip(request), outcome=Outcome.FAILED)
+        await db.commit()
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "The current password is wrong.")
+    token = request.cookies.get(get_settings(request).session_cookie)
+    try:
+        await set_password(
+            db, user, body.new_password, keep_session=hash_token(token) if token else None
+        )
+    except (WeakPassword, NotLocal) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+    record(db, "auth.password", user=user, ip=client_ip(request))
+    await db.commit()
 
 
 @router.get("/me")

@@ -64,6 +64,12 @@
 			: []
 	);
 
+	const roleLabel = $derived.by(() => {
+		const role = session.user?.global_role;
+		if (role) return role.charAt(0).toUpperCase() + role.slice(1);
+		return Object.keys(session.user?.stack_roles ?? {}).length ? 'Stack roles' : 'No role';
+	});
+
 	const isLogin = $derived(page.url.pathname === '/login');
 	let menuOpen = $state(false);
 
@@ -125,17 +131,22 @@
 				{/each}
 			</nav>
 			<div class="account">
-				<div class="who">
+				<a class="who" href="/account" title="Account and password">
 					<span class="name">{session.user.name ?? session.user.username}</span>
 					<span class="role">
-						{session.user.global_role ?? 'stack roles'}
+						{roleLabel}
+						<span class="dot">·</span>
 						<span
 							class="live"
 							class:on={live.connected}
-							title={live.connected ? 'Live updates connected' : 'Live updates offline'}
-						></span>
+							title={live.connected
+								? 'Pages update as soon as something changes'
+								: 'Live updates are offline; pages refresh every few seconds'}
+						>
+							{live.connected ? 'live' : 'offline'}
+						</span>
 					</span>
-				</div>
+				</a>
 				<button class="small" onclick={signOut} title="Log out">
 					<Icon name="logout" size={14} />
 				</button>
@@ -229,6 +240,14 @@
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
+		color: var(--fg);
+		border-radius: 6px;
+		padding: 0.2rem 0.35rem;
+		margin: -0.2rem -0.35rem;
+	}
+	.who:hover {
+		background: var(--panel-alt);
+		text-decoration: none;
 	}
 	.name {
 		font-weight: 600;
@@ -239,17 +258,23 @@
 	.role {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.35rem;
 		font-size: 0.8rem;
 		color: var(--muted);
 	}
 	.live {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+	.live::before {
+		content: '';
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
 		background: var(--border-strong);
 	}
-	.live.on {
+	.live.on::before {
 		background: var(--ok);
 	}
 	main {

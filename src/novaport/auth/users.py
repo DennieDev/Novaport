@@ -3,11 +3,11 @@ import logging
 import re
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from novaport.auth.passwords import check_strength, hash_password
-from novaport.models import GroupMember, OidcProvider, Role, RoleBinding, User
+from novaport.models import GroupMember, OidcProvider, Role, RoleBinding, Session, User
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +28,24 @@ async def create_admin(db: AsyncSession, username: str, password: str) -> User:
     db.add(RoleBinding(user_id=user.id, role=Role.ADMIN))
     await db.commit()
     return user
+
+
+class NotLocal(ValueError):
+    pass
+
+
+async def set_password(
+    db: AsyncSession, user: User, password: str, *, keep_session: str | None = None
+) -> None:
+    """Set a local user's password and end their other sessions. Doesn't commit."""
+    if not user.is_local:
+        raise NotLocal("This user logs in through an identity provider.")
+    check_strength(password)
+    user.password_hash = hash_password(password)
+    sessions = delete(Session).where(Session.user_id == user.id)
+    if keep_session is not None:
+        sessions = sessions.where(Session.token_hash != keep_session)
+    await db.execute(sessions)
 
 
 async def ensure_initial_admin(db: AsyncSession, username: str, password: str | None) -> None:
