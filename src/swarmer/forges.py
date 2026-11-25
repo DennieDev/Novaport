@@ -2,6 +2,7 @@
 """Opening pull (merge) requests on GitHub, GitLab, Gitea, and Forgejo."""
 
 import re
+from datetime import UTC, datetime
 from enum import StrEnum
 from urllib.parse import quote, urlsplit
 
@@ -101,3 +102,64 @@ async def open_pull_request(
     if not isinstance(link, str):
         raise ForgeError(f"{forge} did not return a link to the pull request.")
     return link
+
+
+def _github_expiry(value: str) -> datetime | None:
+    """GitHub sends `2027-03-12 10:00:00 UTC` (or with a numeric offset) for tokens that expire."""
+    text = value.strip().replace(" UTC", " +0000")
+    try:
+        return datetime.strptime(text, "%Y-%m-%d %H:%M:%S %z")
+    except ValueError:
+        return None
+
+
+async def token_expiry(
+    forge: Forge,
+    api_url: str | None,
+    token: str,
+    repo_url: str,
+    *,
+    client: httpx.AsyncClient | None = None,
+) -> datetime | None:
+    """When the token expires, or None if it doesn't (or the forge doesn't say).
+
+    Raises ForgeError when the forge refuses the token, as it does once it has expired.
+    """
+    if forge == Forge.NONE:
+        raise ForgeError("No forge is configured for this repository.")
+    host, path = repo_location(repo_url)
+    api = (api_url or default_api_url(forge, host)).rstrip("/")
+    if forge == Forge.GITHUB:
+        url = f"{api}/repos/{path}"
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    elif forge == Forge.GITLAB:
+        url = f"{api}/api/v4/personal_access_tokens/self"
+        headers = {"PRIVATE-TOKEN": token}
+    else:
+        url = f"{api}/api/v1/repos/{path}"
+        headers = {"Authorization": f"token {token}"}
+
+    own_client = client is None
+    http = client or httpx.AsyncClient(timeout=TIMEOUT)
+    try:
+        response = await http.get(url, headers=headers)
+    except httpx.HTTPError as exc:
+        raise ForgeError(f"Could not reach {forge} at {api}: {exc}") from exc
+    finally:
+        if own_client:
+            await http.aclose()
+    if response.status_code in (401, 403):
+        raise ForgeError(
+            f"{forge} refused the token ({response.status_code}); it may have expired."
+        )
+    if response.is_error:
+        raise ForgeError(f"{forge} answered {response.status_code}: {response.text[:300]}")
+
+    if forge == Forge.GITHUB:
+        header = response.headers.get("github-authentication-token-expiration")
+        return _github_expiry(header) if header else None
+    if forge == Forge.GITLAB:
+        expires = response.json().get("expires_at")
+        if isinstance(expires, str) and expires:
+            return datetime.fromisoformat(expires).replace(tzinfo=UTC)
+    return None

@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, errorMessage } from '#lib/api.ts';
+	import Badge from '#lib/components/Badge.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago } from '#lib/format.ts';
 	import { poll } from '#lib/poll.svelte.ts';
@@ -50,6 +51,36 @@
 			return 'New deploy key generated. Add it to the repository.';
 		});
 
+	const WARN_DAYS = 14;
+	let newToken = $state('');
+
+	function daysLeft(r: Repository): number | null {
+		if (!r.forge_token_expires_at) return null;
+		return Math.floor((new Date(r.forge_token_expires_at).getTime() - Date.now()) / 86_400_000);
+	}
+
+	const replaceToken = (event: SubmitEvent) => {
+		event.preventDefault();
+		return act(async () => {
+			await api.patch(`/repositories/${id}`, { forge_token: newToken });
+			newToken = '';
+			return 'Token replaced.';
+		});
+	};
+
+	const checkToken = () =>
+		act(async () => {
+			await api.post(`/repositories/${id}/forge-token/check`);
+			return 'Checked with the forge.';
+		});
+
+	const removeToken = () =>
+		act(async () => {
+			if (!confirm('Remove the forge token? Pull requests can no longer be opened.')) return;
+			await api.patch(`/repositories/${id}`, { remove_forge_token: true });
+			return 'Token removed.';
+		});
+
 	const rotateSecret = () =>
 		act(async () => {
 			await api.post(`/repositories/${id}/webhook-secret`);
@@ -95,7 +126,6 @@
 				{r.default_edit_mode === 'pr' ? 'pull requests' : 'commit to branch'}
 				{#if r.forge !== 'none'}
 					· {r.forge}{r.forge_api_url ? ` (${r.forge_api_url})` : ''}
-					· token {r.has_forge_token || r.has_token ? 'stored' : 'missing'}
 				{/if}
 			</dd>
 			<dt>Last sync</dt>
@@ -121,12 +151,77 @@
 
 	{#if r.auth === 'ssh'}
 		<h2>Deploy key</h2>
-		<p class="muted">Add this as a read-only deploy key on the repository.</p>
+		<p class="muted">
+			Add this as a deploy key on the repository, with write access: edits and image updates
+			are pushed with it.
+		</p>
 		<pre class="panel key">{r.ssh_public_key}</pre>
 		<button onclick={rotateKey} disabled={busy}>Generate new key</button>
 	{:else if r.auth === 'token'}
 		<h2>Authentication</h2>
 		<p class="muted">HTTPS token {r.has_token ? 'stored (encrypted)' : 'missing'}.</p>
+	{/if}
+
+	{#if r.forge !== 'none'}
+		{@const days = daysLeft(r)}
+		<h2>Forge token</h2>
+		<p class="muted">
+			Opens pull requests on {r.forge}.
+			{#if !r.has_forge_token && r.has_token}Without its own token, the HTTPS token is used.{/if}
+			It is checked daily, and a notification goes out {WARN_DAYS} days before it expires.
+		</p>
+		<div class="panel">
+			<dl class="kv">
+				<dt>Token</dt>
+				<dd>
+					{#if r.has_forge_token}stored (encrypted)
+					{:else if r.has_token}none; using the HTTPS token
+					{:else}<span class="muted">none</span>{/if}
+				</dd>
+				{#if r.has_forge_token || r.has_token}
+					<dt>Expires</dt>
+					<dd>
+						{#if r.forge_token_error}
+							<Badge value="not working" tone="bad" />
+						{:else if r.forge_token_expires_at}
+							{new Date(r.forge_token_expires_at).toLocaleDateString()}
+							{#if days !== null && days < 0}<Badge value="expired" tone="bad" />
+							{:else if days !== null && days <= WARN_DAYS}<Badge value="in {days} days" tone="warn" />
+							{:else}<span class="muted">({ago(r.forge_token_expires_at)})</span>{/if}
+						{:else if r.forge_token_checked_at}
+							<span class="muted">no expiry date</span>
+						{:else}
+							<span class="muted">not checked yet</span>
+						{/if}
+					</dd>
+					<dt>Checked</dt>
+					<dd>
+						{ago(r.forge_token_checked_at)}
+						<button class="link" onclick={checkToken} disabled={busy}>check now</button>
+					</dd>
+					{#if r.forge_token_error}
+						<dt>Problem</dt>
+						<dd class="error">{r.forge_token_error}</dd>
+					{/if}
+				{/if}
+			</dl>
+			<form class="replace" onsubmit={replaceToken}>
+				<input
+					type="password"
+					bind:value={newToken}
+					required
+					autocomplete="off"
+					placeholder={r.has_forge_token ? 'New token' : 'Token'}
+					aria-label="Forge token"
+				/>
+				<button type="submit" disabled={busy || !newToken}>
+					{r.has_forge_token ? 'Replace' : 'Add'}
+				</button>
+				{#if r.has_forge_token}
+					<button type="button" onclick={removeToken} disabled={busy}>Remove</button>
+				{/if}
+			</form>
+		</div>
 	{/if}
 
 	<h2>Webhook</h2>
@@ -169,5 +264,16 @@
 	}
 	dd .link {
 		margin-left: 0.6rem;
+	}
+	.replace {
+		display: flex;
+		gap: 0.6rem;
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--border);
+	}
+	.replace input {
+		flex: 1;
+		max-width: 24rem;
 	}
 </style>

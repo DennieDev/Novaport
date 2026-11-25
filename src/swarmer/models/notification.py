@@ -26,6 +26,7 @@ class EventType(StrEnum):
     NODE_DOWN = "node.down"
     AGENT_UNREACHABLE = "agent.unreachable"
     ENDPOINT_DOWN = "endpoint.disconnected"
+    FORGE_TOKEN = "forge_token.expiring"  # noqa: S105
 
 
 class NotificationChannel(Base):

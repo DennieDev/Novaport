@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 
+from swarmer import forge_tokens
 from swarmer.crypto import Cipher, MissingSecretKey, generate_ssh_keypair
 from swarmer.forges import Forge
 from swarmer.models import DeployMode, EditMode, GitAuth, Outcome, Repository, Role, Stack
@@ -48,6 +49,8 @@ CipherDep = Annotated[Cipher, Depends(get_cipher)]
 SyncerDep = Annotated[Syncer, Depends(get_syncer)]
 
 PollInterval = Annotated[int, Field(ge=0, le=86_400)]
+# Changing any of these can change what the forge says about the token.
+TOKEN_FIELDS = {"forge", "forge_api_url", "forge_token", "remove_forge_token", "token", "url"}
 
 
 class RepositoryIn(BaseModel):
@@ -84,6 +87,7 @@ class RepositoryPatch(BaseModel):
     forge: Forge | None = None
     forge_api_url: str | None = Field(default=None, max_length=500)
     forge_token: str | None = Field(default=None, max_length=1000)
+    remove_forge_token: bool = False
 
 
 class RepositoryOut(BaseModel):
@@ -103,6 +107,10 @@ class RepositoryOut(BaseModel):
     forge: Forge
     forge_api_url: str | None
     has_forge_token: bool
+    # About the token used for the forge's API: the forge token, else the HTTPS token.
+    forge_token_expires_at: datetime | None
+    forge_token_checked_at: datetime | None
+    forge_token_error: str | None
     created_at: datetime
     last_synced_at: datetime | None
     last_commit: str | None
@@ -136,6 +144,9 @@ def to_out(repo: Repository, stack_count: int) -> RepositoryOut:
         forge=Forge(repo.forge),
         forge_api_url=repo.forge_api_url,
         has_forge_token=repo.forge_token is not None,
+        forge_token_expires_at=repo.forge_token_expires_at,
+        forge_token_checked_at=repo.forge_token_checked_at,
+        forge_token_error=repo.forge_token_error,
         created_at=repo.created_at,
         last_synced_at=repo.last_synced_at,
         last_commit=repo.last_commit,
@@ -218,6 +229,7 @@ async def create_repository(
     )
     _apply_auth(repo, body.auth, body.token, cipher)
     _apply_forge_token(repo, body.forge_token, cipher)
+    await forge_tokens.check(repo, cipher)
     db.add(repo)
     access.audit(
         db, "repository.create", target=repo.name, details={"url": repo.url, "id": str(repo.id)}
@@ -259,6 +271,8 @@ async def update_repository(
     if body.forge_api_url is not None:
         repo.forge_api_url = body.forge_api_url or None
     _apply_forge_token(repo, body.forge_token, cipher)
+    if body.remove_forge_token:
+        repo.forge_token = None
     if body.auth is not None or body.token:
         auth = body.auth or repo.auth
         if auth == GitAuth.TOKEN and not (body.token or repo.token):
@@ -268,7 +282,21 @@ async def update_repository(
             )
         _apply_auth(repo, auth, body.token, cipher)
     changed = sorted(body.model_dump(exclude_unset=True).keys())
+    if TOKEN_FIELDS & set(changed):
+        forge_tokens.forget(repo)
+        await forge_tokens.check(repo, cipher)
     access.audit(db, "repository.update", target=repo.name, details={"fields": changed})
+    await db.commit()
+    return to_out(repo, (await _stack_counts(db)).get(repo.id, 0))
+
+
+@router.post("/{repository_id}/forge-token/check")
+async def check_forge_token(
+    repository_id: uuid.UUID, db: DB, cipher: CipherDep, access: AdminAccess
+) -> RepositoryOut:
+    """Ask the forge now when the token expires, instead of waiting for the daily check."""
+    repo = await _get(db, repository_id)
+    await forge_tokens.check(repo, cipher)
     await db.commit()
     return to_out(repo, (await _stack_counts(db)).get(repo.id, 0))
 

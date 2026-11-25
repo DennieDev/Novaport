@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from swarmer import __version__
+from swarmer import __version__, forge_tokens
 from swarmer.agents.pool import AgentPool, Agents
 from swarmer.auth.access import Forbidden, record
 from swarmer.auth.oidc import OidcClient
@@ -251,6 +251,7 @@ def create_app(
                     settings.keep_deployments,
                     settings.audit_retention,
                 ),
+                token_check=lambda: forge_tokens.check_all(maker, cipher, notifier.emit),
             )
             if settings.background_jobs
             else None

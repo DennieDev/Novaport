@@ -262,6 +262,9 @@ export interface Repository {
 	forge: 'none' | 'github' | 'gitlab' | 'gitea';
 	forge_api_url: string | null;
 	has_forge_token: boolean;
+	forge_token_expires_at: string | null;
+	forge_token_checked_at: string | null;
+	forge_token_error: string | null;
 	created_at: string;
 	last_synced_at: string | null;
 	last_commit: string | null;

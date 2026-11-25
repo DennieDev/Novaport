@@ -42,8 +42,11 @@ class Jobs:
         monitor: Monitor | None = None,
         drift_interval: timedelta = timedelta(minutes=5),
         retention: Retention | None = None,
+        token_check: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.retention = retention
+        # Runs with the hourly housekeeping; it checks each forge token at most once a day.
+        self.token_check = token_check
         self.monitor = monitor
         self.drift_interval = drift_interval
         self.updates = updates
@@ -135,6 +138,7 @@ class Jobs:
 
     async def poll_repositories(self) -> None:
         now = datetime.now(UTC)
+        housekeeping = False
         async with self.sessionmaker() as db:
             repos = await db.scalars(select(Repository).where(Repository.poll_interval > 0))
             due = [
@@ -145,6 +149,7 @@ class Jobs:
             ]
             if now - self._last_housekeeping >= HOUSEKEEPING_INTERVAL:
                 self._last_housekeeping = now
+                housekeeping = True
                 await delete_expired_sessions(db)
                 if self.retention is not None:
                     pruned = await prune(db, self.retention)
@@ -156,6 +161,11 @@ class Jobs:
                             pruned.revisions,
                             pruned.audit_entries,
                         )
+        if housekeeping and self.token_check is not None:
+            try:
+                await self.token_check()
+            except Exception:
+                log.exception("Checking forge tokens failed")
         for repo_id in due:
             self.request_sync(repo_id)
 

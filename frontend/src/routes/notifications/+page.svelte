@@ -20,7 +20,8 @@
 		{ value: 'update.pr_opened', label: 'Image update PR opened' },
 		{ value: 'node.down', label: 'Node down' },
 		{ value: 'agent.unreachable', label: 'Agent unreachable' },
-		{ value: 'endpoint.disconnected', label: 'Endpoint disconnected' }
+		{ value: 'endpoint.disconnected', label: 'Endpoint disconnected' },
+		{ value: 'forge_token.expiring', label: 'Forge token expires or stopped working' }
 	];
 	const labels = Object.fromEntries(events.map((e) => [e.value, e.label]));
 

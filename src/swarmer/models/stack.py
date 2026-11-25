@@ -85,6 +85,12 @@ class Repository(Base):
     forge: Mapped[str] = mapped_column(String(10), default="none", server_default="none")
     forge_api_url: Mapped[str | None] = mapped_column(String(500))
     forge_token: Mapped[str | None] = mapped_column(Text)  # encrypted
+    # What the forge said about the token used for its API, checked daily.
+    forge_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    forge_token_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    forge_token_error: Mapped[str | None] = mapped_column(Text)
+    # Set once a notification about this token went out; cleared when the token is replaced.
+    forge_token_warned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_commit: Mapped[str | None] = mapped_column(String(64))
