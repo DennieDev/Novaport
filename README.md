@@ -3,8 +3,8 @@
 Git-driven management UI for Docker and Docker Swarm stacks.
 
 Novaport deploys stacks from a git repository, shows exactly what is running and why something
-isn't, and writes changes made in the UI back to git. A failed deploy never touches your stack
-definition.
+isn't, and writes changes made in the UI back to git. A failed deploy never changes what's in
+git: it is marked failed, and rolling back is a deploy of an older revision you ask for.
 
 > Early development. Nothing here is ready for use yet.
 
