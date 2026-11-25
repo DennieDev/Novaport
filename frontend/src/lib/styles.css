@@ -1,4 +1,14 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* For the wordmark only. SIL Open Font License, see assets/fonts/OFL.txt. */
+@font-face {
+	font-family: 'JetBrains Mono';
+	font-weight: 600;
+	font-style: normal;
+	font-display: swap;
+	src: url('./assets/fonts/JetBrainsMono-SemiBold.woff2') format('woff2');
+}
+
 :root {
 	--bg: #f6f7f9;
 	--fg: #1b1d23;

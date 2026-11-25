@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, ApiError } from '#lib/api.ts';
-	import logo from '#lib/assets/favicon.svg';
+	import Logo from '#lib/components/Logo.svelte';
 	import { logIn } from '#lib/session.svelte.ts';
 	import type { ProviderLink } from '#lib/types.ts';
 
@@ -49,9 +49,8 @@
 <div class="wrap">
 	<div class="panel box">
 		<div class="brand">
-			<img src={logo} alt="" width="36" height="36" />
 			<div>
-				<h1>Swarmer</h1>
+				<h1 aria-label="Swarmer"><Logo size={34} name /></h1>
 				<p class="muted">Sign in to manage your stacks</p>
 			</div>
 		</div>

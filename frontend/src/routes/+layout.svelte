@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import favicon from '#lib/assets/favicon.svg';
 	import Icon, { type IconName } from '#lib/components/Icon.svelte';
+	import Logo from '#lib/components/Logo.svelte';
 	import { live, subscribe } from '#lib/live.svelte.ts';
 	import { can, loadSession, logOut, session } from '#lib/session.svelte.ts';
 	import '#lib/styles.css';
@@ -114,11 +115,11 @@
 			<button class="menu" aria-label="Menu" onclick={() => (menuOpen = !menuOpen)}>
 				<Icon name="menu" size={18} />
 			</button>
-			<a class="brand" href="/"><img src={favicon} alt="" width="20" height="20" />Swarmer</a>
+			<a class="brand" href="/" aria-label="Swarmer"><Logo size={20} name /></a>
 		</header>
 
 		<aside class:open={menuOpen}>
-			<a class="brand" href="/"><img src={favicon} alt="" width="22" height="22" />Swarmer</a>
+			<a class="brand" href="/" aria-label="Swarmer"><Logo size={22} name /></a>
 			<nav>
 				{#each visibleGroups as group (group.title)}
 					{#if group.title}<div class="group">{group.title}</div>{/if}
