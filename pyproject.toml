@@ -1,6 +1,6 @@
 [project]
 name = "novaport"
-version = "0.1.0rc2"
+version = "0.1.0rc3"
 description = "Git-driven management UI for Docker and Docker Swarm stacks"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
