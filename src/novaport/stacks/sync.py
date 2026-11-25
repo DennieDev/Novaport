@@ -10,9 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from novaport.config import Settings
 from novaport.crypto import Cipher
-from novaport.git import Credentials, GitError, GitMirror
+from novaport.git import Credentials, EmptyRepository, GitError, GitMirror, Identity
 from novaport.locks import lock, try_lock
 from novaport.models import Endpoint, GitAuth, Repository, Revision, Stack, StackType
+from novaport.sops import age_recipient
 from novaport.stacks.deployments import deployment_for_new_revision
 from novaport.stacks.settings import (
     COMPOSE_FILES,
@@ -24,6 +25,13 @@ from novaport.stacks.settings import (
 )
 
 log = logging.getLogger(__name__)
+
+SOPS_CONFIG = """\
+creation_rules:
+  - path_regex: secrets\\.env$
+    age: >-
+      {recipient}
+"""
 
 
 @dataclass
@@ -94,11 +102,38 @@ class Syncer:
         """Sync while the caller already holds this repository's sync lock."""
         return await self._sync(db, repo)
 
+    async def _initialize(
+        self, mirror: GitMirror, repo: Repository, credentials: Credentials
+    ) -> str:
+        """Push a first commit to an empty remote: the stacks folder, and a .sops.yaml with
+        Novaport's age key as recipient when one is configured."""
+        root = repo.stacks_root.strip("/")
+        files: dict[str, bytes | None] = {f"{root}/.gitkeep" if root else ".gitkeep": b""}
+        if self.settings.age_key:
+            recipient = age_recipient(self.settings.age_key.get_secret_value())
+            files[".sops.yaml"] = SOPS_CONFIG.format(recipient=recipient).encode()
+        identity = Identity(self.settings.commit_name, self.settings.commit_email)
+        commit = await mirror.commit(None, files, "Initialize repository", identity, identity)
+        await mirror.push(commit, repo.branch, credentials)
+        log.info("Pushed a first commit to empty repository %s", repo.name)
+        return commit
+
     async def _sync(self, db: AsyncSession, repo: Repository) -> SyncResult:
         mirror = mirror_for(self.settings, repo)
+        credentials = credentials_for(repo, self.cipher)
         repo.last_synced_at = datetime.now(UTC)
         try:
-            commit = await mirror.fetch(repo.branch, credentials_for(repo, self.cipher))
+            commit = await mirror.fetch(repo.branch, credentials)
+        except EmptyRepository:
+            try:
+                commit = await self._initialize(mirror, repo, credentials)
+            except (GitError, ValueError) as exc:
+                repo.last_error = (
+                    "The repository is empty, and pushing a first commit to it failed. "
+                    f"Novaport needs write access for that: {exc}"
+                )
+                log.warning("Initializing repository %s failed: %s", repo.name, exc)
+                return SyncResult(error=repo.last_error)
         except (GitError, ValueError) as exc:
             repo.last_error = f"Fetch failed: {exc}"
             log.warning("Sync of repository %s failed: %s", repo.name, exc)

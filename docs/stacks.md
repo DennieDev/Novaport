@@ -27,6 +27,11 @@ The compose file is the first of `compose.yaml`, `compose.yml`, `docker-compose.
 `docker-compose.yml` that exists. Other files in the folder (configs, scripts) are available to
 the compose file through relative paths, as with `docker stack deploy`.
 
+A new, empty repository works too. On the first sync Novaport pushes a commit with the stacks
+folder and, when `NOVAPORT_AGE_KEY` is set, a `.sops.yaml` that lists Novaport's public key. That
+needs write access, the same as editing stacks. A repository that has commits but not the
+configured branch is left alone and shows an error.
+
 Removing a folder marks the stack as removed in Novaport. Its services keep running until you
 remove them.
 

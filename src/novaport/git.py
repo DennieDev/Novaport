@@ -54,6 +54,10 @@ class PushRejected(GitError):
     """The remote branch moved since we fetched it."""
 
 
+class EmptyRepository(GitError):
+    """The remote has no branches at all."""
+
+
 class GitMirror:
     """A bare clone used as a local cache; files are read from it by commit, never checked out."""
 
@@ -124,15 +128,23 @@ class GitMirror:
 
         ref = f"refs/remotes/origin/{branch}"
         async with self._auth_env(credentials) as env:
-            await self._git(
-                "fetch",
-                "--quiet",
-                "--prune",
-                "--no-tags",
-                "origin",
-                f"+refs/heads/{branch}:{ref}",
-                env=env,
-            )
+            try:
+                await self._git(
+                    "fetch",
+                    "--quiet",
+                    "--prune",
+                    "--no-tags",
+                    "origin",
+                    f"+refs/heads/{branch}:{ref}",
+                    env=env,
+                )
+            except GitError as exc:
+                if (
+                    "couldn't find remote ref" in str(exc)
+                    and not (await self._git("ls-remote", "--heads", "origin", env=env)).strip()
+                ):
+                    raise EmptyRepository(str(exc)) from exc
+                raise
         return (await self._git("rev-parse", f"{ref}^{{commit}}")).strip()
 
     async def list_dirs(self, commit: str, root: str) -> list[str]:
@@ -222,17 +234,19 @@ class GitMirror:
 
     async def commit(
         self,
-        parent: str,
+        parent: str | None,
         changes: dict[str, bytes | None],
         message: str,
         author: Identity,
         committer: Identity,
     ) -> str:
-        """Create a commit on top of `parent` with `changes` (repository path to content, or
-        None to delete) without a working tree. Returns the new commit SHA."""
+        """Create a commit on top of `parent` (a root commit if None) with `changes`
+        (repository path to content, or None to delete) without a working tree. Returns the new
+        commit SHA."""
         with tempfile.TemporaryDirectory(prefix="novaport-index-") as tmp:
             env = {"GIT_INDEX_FILE": str(Path(tmp) / "index")}
-            await self._git("read-tree", parent, env=env)
+            if parent:
+                await self._git("read-tree", parent, env=env)
             lines = []
             for path, content in sorted(changes.items()):
                 if content is None:
@@ -251,9 +265,8 @@ class GitMirror:
             "GIT_COMMITTER_NAME": committer.name,
             "GIT_COMMITTER_EMAIL": committer.email,
         }
-        out = await self._git(
-            "commit-tree", tree, "-p", parent, env=identity, stdin=message.encode()
-        )
+        parents = ["-p", parent] if parent else []
+        out = await self._git("commit-tree", tree, *parents, env=identity, stdin=message.encode())
         return out.strip()
 
     async def push(self, commit: str, branch: str, credentials: Credentials) -> None:

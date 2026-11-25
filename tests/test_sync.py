@@ -18,6 +18,7 @@ from novaport.models import (
     Stack,
     StackType,
 )
+from novaport.sops import age_recipient, generate_age_key
 from novaport.stacks.sync import Syncer
 from tests.conftest import TEST_SECRET_KEY, make_settings
 from tests.gitrepo import COMPOSE, Repo
@@ -41,10 +42,8 @@ class Env:
                     id=self.repo_id,
                     name="infra",
                     url=self.origin.url,
-                    branch="main",
-                    stacks_root="stacks",
                     webhook_secret="x",
-                    **fields,
+                    **({"branch": "main", "stacks_root": "stacks"} | fields),
                 )
             )
             await db.commit()
@@ -205,3 +204,43 @@ async def test_unreachable_remote_records_error(env: Env, tmp_path: Path) -> Non
     result = await env.syncer.sync(env.repo_id)
     assert result.error is not None
     assert (await env.repository()).last_error == result.error
+
+
+async def test_empty_repository_gets_a_first_commit(env: Env, tmp_path: Path) -> None:
+    age_key = generate_age_key()
+    env.settings = make_settings(database_url=env.settings.database_url, age_key=SecretStr(age_key))
+    env.syncer = Syncer(env.settings, env.engine, env.maker, Cipher(TEST_SECRET_KEY))
+    env.origin = Repo(tmp_path / "empty")
+    await env.add_repository()
+
+    result = await env.syncer.sync(env.repo_id)
+
+    assert result.error is None
+    assert result.commit == env.origin.head("main")
+    assert env.origin.git("ls-tree", "-r", "--name-only", "main").split() == [
+        ".sops.yaml",
+        "stacks/.gitkeep",
+    ]
+    assert age_recipient(age_key) in env.origin.show(".sops.yaml", "main")
+    assert env.origin.log("%an <%ae>", "main") == "Novaport <novaport@localhost>"
+    assert (await env.repository()).last_error is None
+
+    again = await env.syncer.sync(env.repo_id)
+    assert again.commit == result.commit
+
+
+async def test_empty_repository_without_age_key_gets_only_the_stacks_folder(
+    env: Env, tmp_path: Path
+) -> None:
+    env.origin = Repo(tmp_path / "empty")
+    await env.add_repository()
+    await env.syncer.sync(env.repo_id)
+    assert env.origin.git("ls-tree", "-r", "--name-only", "main").split() == ["stacks/.gitkeep"]
+
+
+async def test_missing_branch_in_non_empty_repository_is_left_alone(env: Env) -> None:
+    await env.add_repository(branch="production")
+    result = await env.syncer.sync(env.repo_id)
+    assert result.error is not None
+    assert "production" in result.error
+    assert "production" not in env.origin.git("branch", "--list")
