@@ -8,6 +8,7 @@
 	import { live, subscribe } from '#lib/live.svelte.ts';
 	import { can, loadSession, logOut, session } from '#lib/session.svelte.ts';
 	import '#lib/styles.css';
+	import { setTheme, theme, type Theme } from '#lib/theme.svelte.ts';
 	import type { Role } from '#lib/types.ts';
 	import type { LayoutProps } from './$types';
 
@@ -96,6 +97,18 @@
 		return href === '/' ? path === '/' : path === href || path.startsWith(`${href}/`);
 	}
 
+	const THEMES: { value: Theme; icon: IconName; label: string }[] = [
+		{ value: 'system', icon: 'monitor', label: 'Theme follows the system' },
+		{ value: 'light', icon: 'sun', label: 'Light theme' },
+		{ value: 'dark', icon: 'moon', label: 'Dark theme' }
+	];
+	const currentTheme = $derived(THEMES.find((t) => t.value === theme.current) ?? THEMES[0]);
+
+	function nextTheme() {
+		const index = THEMES.findIndex((t) => t.value === theme.current);
+		setTheme(THEMES[(index + 1) % THEMES.length].value);
+	}
+
 	async function signOut() {
 		await logOut();
 		await goto('/login');
@@ -148,6 +161,14 @@
 						</span>
 					</span>
 				</a>
+				<button
+					class="small"
+					onclick={nextTheme}
+					title="{currentTheme.label} (click to change)"
+					aria-label="{currentTheme.label} (click to change)"
+				>
+					<Icon name={currentTheme.icon} size={14} />
+				</button>
 				<button class="small" onclick={signOut} title="Log out">
 					<Icon name="logout" size={14} />
 				</button>

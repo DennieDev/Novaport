@@ -34,7 +34,7 @@
 		fill: var(--accent);
 	}
 	.name {
-		font-family: 'JetBrains Mono', ui-monospace, monospace;
+		font-family: var(--mono);
 		font-weight: 600;
 		letter-spacing: -0.02em;
 		/* Fonts put the letters at different heights in their line box; trimming it to the

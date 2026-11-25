@@ -31,7 +31,7 @@
 			fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
 			fontSize: 13,
 			convertEol: false,
-			theme: { background: '#0c0d10' }
+			theme: { background: '#0c0e12' }
 		});
 		fit = new FitAddon();
 		terminal.loadAddon(fit);

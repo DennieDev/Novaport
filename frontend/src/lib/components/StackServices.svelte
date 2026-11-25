@@ -367,7 +367,7 @@
 		margin-right: 0.4rem;
 	}
 	.port {
-		font-family: ui-monospace, monospace;
+		font-family: var(--mono);
 		font-size: 0.8rem;
 		border: 1px solid var(--border);
 		border-radius: 4px;

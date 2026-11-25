@@ -1,6 +1,14 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 
-/* For the wordmark only. SIL Open Font License, see assets/fonts/OFL.txt. */
+/* JetBrains Mono, as on dennie.io: the wordmark and technical values. SIL Open Font License,
+   see assets/fonts/OFL.txt. */
+@font-face {
+	font-family: 'JetBrains Mono';
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+	src: url('./assets/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+}
 @font-face {
 	font-family: 'JetBrains Mono';
 	font-weight: 600;
@@ -9,46 +17,34 @@
 	src: url('./assets/fonts/JetBrainsMono-SemiBold.woff2') format('woff2');
 }
 
+/* Each colour has a light and a dark value. The system setting picks one, unless the theme
+   switch sets data-theme on the root element. */
 :root {
-	--bg: #f6f7f9;
-	--fg: #1b1d23;
-	--panel: #ffffff;
-	--panel-alt: #fafbfc;
-	--sidebar: #ffffff;
-	--border: #e3e5ea;
-	--border-strong: #cfd3db;
-	--muted: #687082;
-	--accent: #4657d0;
-	--accent-fg: #ffffff;
-	--accent-soft: #eceefc;
-	--ok: #18804a;
-	--warn: #a86400;
-	--bad: #c22f2a;
-	--code: #f1f2f5;
-	--shadow: 0 1px 2px rgb(16 24 40 / 0.05);
-	--radius: 8px;
 	color-scheme: light dark;
+	--bg: light-dark(#f6f7f9, #0c0e12);
+	--fg: light-dark(#1b1d23, #e8ecf2);
+	--panel: light-dark(#ffffff, #10131a);
+	--panel-alt: light-dark(#fafbfc, #141822);
+	--sidebar: light-dark(#ffffff, #0e1016);
+	--border: light-dark(#e3e5ea, #1e232c);
+	--border-strong: light-dark(#cfd3db, #2e3542);
+	--muted: light-dark(#687082, #a3acba);
+	--accent: light-dark(#2563eb, #8ab4ff);
+	--accent-fg: light-dark(#ffffff, #0c0e12);
+	--accent-soft: light-dark(#e8f0fe, #16223a);
+	--ok: light-dark(#18804a, #4cc98a);
+	--warn: light-dark(#a86400, #e3a945);
+	--bad: light-dark(#c22f2a, #f26d67);
+	--code: light-dark(#f1f2f5, #161a22);
+	--shadow: 0 1px 2px light-dark(rgb(16 24 40 / 0.05), transparent);
+	--radius: 8px;
+	--mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }
-
-@media (prefers-color-scheme: dark) {
-	:root {
-		--bg: #121317;
-		--fg: #e5e6eb;
-		--panel: #1a1b20;
-		--panel-alt: #1e2026;
-		--sidebar: #16171c;
-		--border: #2a2c34;
-		--border-strong: #3a3d47;
-		--muted: #8f94a5;
-		--accent: #8e9bff;
-		--accent-fg: #0f1220;
-		--accent-soft: #23274a;
-		--ok: #4cc98a;
-		--warn: #e3a945;
-		--bad: #f26d67;
-		--code: #22242b;
-		--shadow: none;
-	}
+:root[data-theme='light'] {
+	color-scheme: light;
+}
+:root[data-theme='dark'] {
+	color-scheme: dark;
 }
 
 * {
@@ -127,7 +123,7 @@ tbody tr:hover td {
 
 code,
 pre {
-	font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+	font-family: var(--mono);
 	font-size: 0.84rem;
 }
 code {
