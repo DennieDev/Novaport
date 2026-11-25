@@ -1679,7 +1679,7 @@ wheels = [
 
 [[package]]
 name = "swarmer"
-version = "0.1.0rc9"
+version = "0.1.0rc10"
 source = { editable = "." }
 dependencies = [
     { name = "aiodocker" },
