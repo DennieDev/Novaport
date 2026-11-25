@@ -329,6 +329,7 @@
 				data={containers.data}
 				operator={can('operator', s.id)}
 				onchange={containers.refresh}
+				deploying={!!active}
 			/>
 		{/if}
 	{/if}

@@ -10,15 +10,20 @@
 		stackId,
 		data,
 		operator,
+		deploying = false,
 		onchange
 	}: {
 		stackId: string;
 		data: StackContainers;
 		operator: boolean;
+		// A deployment of this stack is under way: every service is opened to follow it.
+		deploying?: boolean;
 		onchange: () => void;
 	} = $props();
 
 	const RECENT_MS = 10 * 60_000;
+	// Swarm task states between being created and running.
+	const STARTING = ['new', 'pending', 'assigned', 'accepted', 'preparing', 'starting', 'ready'];
 
 	let onlyRunning = $state(true);
 	// What the user opened or closed; untouched services follow `openByDefault`.
@@ -41,15 +46,38 @@
 		).length;
 	}
 
+	const UPDATE_LABELS: Record<string, string> = {
+		updating: 'updating',
+		paused: 'update paused',
+		rollback_started: 'rolling back',
+		rollback_paused: 'rollback paused',
+		rollback_completed: 'rolled back'
+	};
+
 	function updating(s: ServiceRow): boolean {
 		return ['updating', 'rollback_started'].includes(s.update_status?.state ?? '');
+	}
+
+	function starting(s: ServiceRow): number {
+		return s.containers.filter((c) => c.current && STARTING.includes(c.state)).length;
 	}
 
 	function isOpen(s: ServiceRow): boolean {
 		return (
 			toggled[s.full_name] ??
-			(data.services.length === 1 || !healthy(s) || recentFailures(s) > 0 || updating(s))
+			(deploying ||
+				data.services.length === 1 ||
+				!healthy(s) ||
+				recentFailures(s) > 0 ||
+				updating(s) ||
+				starting(s) > 0)
 		);
+	}
+
+	const allOpen = $derived(data.services.every(isOpen));
+
+	function setAll(open: boolean) {
+		toggled = Object.fromEntries(data.services.map((s) => [s.full_name, open]));
 	}
 
 	// Tasks being replaced still run until Swarm stops them, so they count as running.
@@ -98,11 +126,18 @@
 		{data.services.length} service{data.services.length === 1 ? '' : 's'}
 		{#if !data.agents}· logs and consoles need the Novaport agent on this stack's hosts{/if}
 	</span>
-	<label class="switch">
-		<input type="checkbox" bind:checked={onlyRunning} />
-		<span class="track"><span class="thumb"></span></span>
-		Only running tasks
-	</label>
+	<span class="controls">
+		{#if data.services.length > 1}
+			<button class="link" onclick={() => setAll(!allOpen)}>
+				{allOpen ? 'Collapse all' : 'Expand all'}
+			</button>
+		{/if}
+		<label class="switch">
+			<input type="checkbox" bind:checked={onlyRunning} />
+			<span class="track"><span class="thumb"></span></span>
+			Hide stopped tasks
+		</label>
+	</span>
 </div>
 {#if message}<p class:error={message.error} class:muted={!message.error}>{message.text}</p>{/if}
 
@@ -139,8 +174,15 @@
 						{#if failures}
 							<Badge value="restarting" tone="bad" />
 						{/if}
+						{#if starting(s)}
+							<Badge value="{starting(s)} starting" tone="warn" />
+						{/if}
 						{#if s.update_status?.state && s.update_status.state !== 'completed'}
-							<Badge value={`update ${s.update_status.state}`} />
+							{@const update = s.update_status.state}
+							<Badge
+								value={UPDATE_LABELS[update] ?? `update ${update}`}
+								tone={update === 'updating' ? 'warn' : 'bad'}
+							/>
 						{/if}
 					</td>
 					<td><code>{s.image}</code></td>
@@ -225,7 +267,7 @@
 										<tr>
 											<td colspan="6" class="muted">
 												No running tasks{onlyRunning && s.containers.length
-													? '. Turn off "Only running tasks" to see stopped ones.'
+													? '. Turn off "Hide stopped tasks" to see stopped ones.'
 													: '.'}
 											</td>
 										</tr>
@@ -249,6 +291,11 @@
 		justify-content: space-between;
 		gap: 1rem;
 		margin-bottom: 0.6rem;
+	}
+	.controls {
+		display: inline-flex;
+		align-items: center;
+		gap: 1rem;
 	}
 	.switch {
 		display: inline-flex;
