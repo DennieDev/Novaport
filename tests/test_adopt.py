@@ -11,7 +11,7 @@ from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from novaport.models import AuditEntry, Stack
+from novaport.models import AuditEntry, Deployment, Stack
 from novaport.server.app import create_app
 from novaport.sops import Sops, generate_age_key
 from novaport.stacks.adopt import compose_project, duration, looks_secret, size, swarm_compose
@@ -264,6 +264,14 @@ async def test_adopting_commits_the_stack_for_manual_deploys(
             stack = await db.scalar(select(Stack).where(Stack.name == "legacy"))
             assert stack is not None
             assert stack.deploy_mode == "manual"
+            # Committed as generated, so what git says is what runs.
+            assert stack.last_good_revision_id is not None
+            assert stack.deployed_spec is not None
+            assert "api" in stack.deployed_spec
+            adopted = await db.scalar(select(Deployment).where(Deployment.stack_id == stack.id))
+            assert adopted is not None
+            assert (adopted.status, adopted.trigger) == ("succeeded", "adopt")
+            assert adopted.revision_id == stack.last_good_revision_id
             entry = await db.scalar(select(AuditEntry).where(AuditEntry.action == "stack.adopt"))
             assert entry is not None
             assert entry.target == "legacy"
@@ -275,6 +283,32 @@ async def test_adopting_commits_the_stack_for_manual_deploys(
         json={"repository_id": repos[0]["id"], "compose": generated["compose"]},
     )
     assert again.status_code == 409
+
+
+@pytest.mark.postgres
+async def test_an_edited_file_is_not_marked_as_running(
+    app: tuple[httpx.AsyncClient, Repo], clean_db: str
+) -> None:
+    client, _ = app
+    generated = (await client.get("/api/unmanaged/swarm/legacy")).json()
+    edited = generated["compose"].replace("MODE: prod", "MODE: staging")
+    assert edited != generated["compose"]
+    repos = (await client.get("/api/repositories")).json()
+    response = await client.post(
+        "/api/unmanaged/swarm/legacy/adopt",
+        json={"repository_id": repos[0]["id"], "compose": edited},
+    )
+    assert response.status_code == 200, response.text
+
+    engine = create_async_engine(clean_db)
+    try:
+        async with async_sessionmaker(engine)() as db:
+            stack = await db.scalar(select(Stack).where(Stack.name == "legacy"))
+            assert stack is not None
+            assert stack.last_good_revision_id is None
+            assert await db.scalar(select(Deployment)) is None
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.postgres

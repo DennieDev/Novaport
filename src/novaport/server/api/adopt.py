@@ -2,6 +2,7 @@
 import re
 import socket
 import uuid
+from datetime import UTC, datetime
 from typing import Literal
 
 import yaml
@@ -10,11 +11,23 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from novaport.deploy.drift import snapshot
 from novaport.docker.client import ClusterReader, DockerUnavailable, NotFound, NotSwarmManager
 from novaport.docker.views import STACK_LABEL
 from novaport.edge.hub import EndpointOffline, Target, Targets
 from novaport.locks import LockTimeout
-from novaport.models import DeployMode, Endpoint, Outcome, Repository, Stack, StackType
+from novaport.models import (
+    Deployment,
+    DeploymentEvent,
+    DeploymentStatus,
+    DeployMode,
+    Endpoint,
+    Outcome,
+    Repository,
+    Revision,
+    Stack,
+    StackType,
+)
 from novaport.server.api.editing import Editor, SaveResult, conflict_response, save_result
 from novaport.server.deps import DB, AdminAccess, ViewerAccess, current_user
 from novaport.stacks.adopt import (
@@ -176,6 +189,50 @@ async def _generate(
     return compose_project(name, containers, move_secrets=move_secrets), False
 
 
+async def _record_as_running(
+    db: DB, user_id: uuid.UUID, name: str, commit: str, target: Target
+) -> None:
+    """Mark the adopted revision as the one running, since the file was committed as
+    generated from the running services. The caller commits."""
+    stack = await db.scalar(select(Stack).where(Stack.name == name, Stack.removed_at.is_(None)))
+    if stack is None:
+        return
+    revision = await db.scalar(
+        select(Revision).where(Revision.stack_id == stack.id, Revision.commit == commit)
+    )
+    if revision is None:
+        return
+    now = datetime.now(UTC)
+    deployment = Deployment(
+        stack_id=stack.id,
+        revision_id=revision.id,
+        status=DeploymentStatus.SUCCEEDED,
+        stage="converge",
+        trigger="adopt",
+        triggered_by_id=user_id,
+        started_at=now,
+        finished_at=now,
+    )
+    db.add(deployment)
+    await db.flush()
+    db.add(
+        DeploymentEvent(
+            deployment_id=deployment.id,
+            stage="converge",
+            level="info",
+            message="Added to git as it was running. Nothing was deployed.",
+            at=now,
+        )
+    )
+    stack.last_good_revision_id = revision.id
+    if stack.type == StackType.SWARM and target.reader is not None:
+        # The baseline for drift detection, as a deploy would record it.
+        services = await target.reader.services(label=f"{STACK_LABEL}={name}")
+        stack.deployed_spec = snapshot(services, name)
+        stack.drift = []
+        stack.drift_checked_at = now
+
+
 @router.get("/unmanaged/{kind}/{name}")
 async def generate(
     kind: Kind,
@@ -224,17 +281,20 @@ async def adopt(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Repository not found.")
     target = await _target(db, request, endpoint)
 
-    secrets: dict[str, str] = {}
-    if editor.sops.recipient is not None:
-        # Read again rather than sent by the browser, so the values never leave the server.
-        generated, _ = await _generate(
-            target, kind, name, local=endpoint is None, move_secrets=True
-        )
-        secrets = {
-            k: v
-            for k, v in generated.secrets.items()
-            if re.search(rf"\$\{{{re.escape(k)}\}}", body.compose)
-        }
+    # Read again rather than sent by the browser, so secret values never leave the server.
+    generated, _ = await _generate(
+        target,
+        kind,
+        name,
+        local=endpoint is None,
+        move_secrets=editor.sops.recipient is not None,
+    )
+    secrets = {
+        k: v
+        for k, v in generated.secrets.items()
+        if re.search(rf"\$\{{{re.escape(k)}\}}", body.compose)
+    }
+    unchanged = yaml.safe_load(body.compose) == yaml.safe_load(generated.compose)
 
     stack_type = StackType(kind)
     settings: dict[str, str] = {"deploy": body.deploy.value}
@@ -268,6 +328,8 @@ async def adopt(
         access.audit(db, "stack.adopt", target=name, outcome=Outcome.FAILED, details=details)
         await db.commit()
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+    if unchanged and result.pull_request_url is None:
+        await _record_as_running(db, access.user.id, name, result.commit, target)
     access.audit(
         db,
         "stack.adopt",

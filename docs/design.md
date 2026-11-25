@@ -526,7 +526,10 @@ external references, since their values can't be read back; `$` is escaped; valu
 in by default are left out. An admin reviews and edits the file, and Novaport commits it with a
 `novaport.yaml` (`deploy: manual` unless chosen otherwise) through the repository's usual edit
 mode. The first deploy updates the running stack in place, and when the file matches what runs,
-no task is replaced.
+no task is replaced. When the file is committed as generated, its revision counts as the one
+running: the stack history gets an `adopt` entry and the running services become the baseline
+for drift detection, without a deploy. An edited file shows as newer in git until it is
+deployed.
 
 Environment values that look like passwords, keys, or tokens are moved to the stack's
 `secrets.env` (encrypted) when Novaport has an age key, and the compose file refers to them as
