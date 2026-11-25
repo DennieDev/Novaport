@@ -60,12 +60,14 @@
 					<td>{s.type}</td>
 					<td>{s.deploy_mode}</td>
 					<td>
-						{#if s.last_good_revision}
-							<code>{s.last_good_revision.commit.slice(0, 10)}</code>
-						{:else}
-							<span class="muted">never deployed</span>
-						{/if}
-						{#if behind(s)}<Badge value="newer in git" tone="warn" />{/if}
+						<span class="revision">
+							{#if s.last_good_revision}
+								<code>{s.last_good_revision.commit.slice(0, 10)}</code>
+							{:else}
+								<Badge value="never deployed" tone="muted" />
+							{/if}
+							{#if behind(s)}<Badge value="newer in git" tone="warn" />{/if}
+						</span>
 					</td>
 					<td>
 						{#if s.last_deployment}
@@ -93,5 +95,10 @@
 	}
 	tr.removed td {
 		opacity: 0.6;
+	}
+	.revision {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
 	}
 </style>
