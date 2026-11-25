@@ -12,5 +12,5 @@
 <p class="muted">Values are never shown. Docker does not return them, and Swarmer does not store them.</p>
 <Status loading={items.loading && !items.data} error={items.error} />
 {#if items.data}
-	<SwarmObjectTable items={items.data} />
+	<SwarmObjectTable items={items.data} empty="No Swarm secrets." />
 {/if}

@@ -9,7 +9,10 @@
 </script>
 
 <h1>Configs</h1>
+<p class="muted">
+	Swarm configs in the cluster. Stacks create theirs from the compose file; values stay in git.
+</p>
 <Status loading={items.loading && !items.data} error={items.error} />
 {#if items.data}
-	<SwarmObjectTable items={items.data} />
+	<SwarmObjectTable items={items.data} empty="No Swarm configs." />
 {/if}

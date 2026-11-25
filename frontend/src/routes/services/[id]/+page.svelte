@@ -2,6 +2,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api, errorMessage } from '#lib/api.ts';
+	import Crumbs from '#lib/components/Crumbs.svelte';
+	import Icon from '#lib/components/Icon.svelte';
 	import Badge from '#lib/components/Badge.svelte';
 	import LogViewer from '#lib/components/LogViewer.svelte';
 	import Status from '#lib/components/Status.svelte';
@@ -42,22 +44,29 @@
 	);
 </script>
 
-<p class="crumbs"><a href="/services">← Services</a></p>
+<Crumbs items={[{ href: '/services', label: 'Services' }]} />
 <Status loading={service.loading && !service.data} error={service.error} />
 
 {#if service.data}
 	{@const s = service.data}
-	<h1>
-		{s.name}
-		{#if s.stack}<span class="muted">· stack {s.stack}</span>{/if}
-	</h1>
-
-	{#if can('operator', stackId)}
-		<p>
-			<button onclick={restart} disabled={restarting}>Restart</button>
-			{#if restartError}<span class="error">{restartError}</span>{/if}
-		</p>
-	{/if}
+	<div class="page-header">
+		<div>
+			<h1>{s.name}</h1>
+			{#if s.stack}
+				<p class="subtitle">
+					stack {#if stackId}<a href="/stacks/{stackId}">{s.stack}</a>{:else}{s.stack}{/if}
+				</p>
+			{/if}
+		</div>
+		{#if can('operator', stackId)}
+			<div class="toolbar">
+				<button onclick={restart} disabled={restarting}>
+					<Icon name="restart" size={14} />Restart
+				</button>
+			</div>
+		{/if}
+	</div>
+	{#if restartError}<p class="error">{restartError}</p>{/if}
 
 	<div class="panel">
 		<dl class="kv">
@@ -199,10 +208,6 @@
 {/if}
 
 <style>
-	h1 .muted {
-		font-weight: 400;
-		font-size: 1rem;
-	}
 	.toggle {
 		font-weight: 400;
 		font-size: 0.85rem;

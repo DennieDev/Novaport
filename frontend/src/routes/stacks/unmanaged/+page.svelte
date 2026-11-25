@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
 	import { api, errorMessage } from '#lib/api.ts';
+	import Crumbs from '#lib/components/Crumbs.svelte';
 	import Badge from '#lib/components/Badge.svelte';
 	import CodeEditor from '#lib/components/CodeEditor.svelte';
 	import Status from '#lib/components/Status.svelte';
@@ -71,7 +72,7 @@
 	}
 </script>
 
-<p class="crumbs"><a href="/stacks">← Stacks</a></p>
+<Crumbs items={[{ href: '/stacks', label: 'Stacks' }]} />
 <h1>Deployed without Swarmer</h1>
 <p class="muted">
 	These Swarm stacks and Compose projects run on your hosts, but no repository describes them.

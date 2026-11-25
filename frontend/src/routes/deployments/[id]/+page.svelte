@@ -2,6 +2,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api, errorMessage } from '#lib/api.ts';
+	import Crumbs from '#lib/components/Crumbs.svelte';
 	import Badge from '#lib/components/Badge.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago } from '#lib/format.ts';
@@ -38,11 +39,29 @@
 
 {#if deployment.data}
 	{@const d = deployment.data}
-	<p class="crumbs"><a href="/stacks/{d.stack_id}">← {d.stack_name}</a></p>
-	<h1>
-		Deploy {d.stack_name}
-		<Badge value={d.status.replace('_', ' ')} />
-	</h1>
+	<Crumbs
+		items={[
+			{ href: '/stacks', label: 'Stacks' },
+			{ href: `/stacks/${d.stack_id}`, label: d.stack_name }
+		]}
+	/>
+	<div class="page-header">
+		<h1>
+			Deploy {d.stack_name}
+			<Badge value={d.status.replace('_', ' ')} />
+		</h1>
+		{#if (d.status === 'awaiting_approval' || d.status === 'pending') && can('operator', d.stack_id)}
+			<div class="toolbar">
+				{#if d.status === 'awaiting_approval'}
+					<button class="primary" onclick={() => act('approve')} disabled={busy}>
+						Approve and deploy
+					</button>
+				{/if}
+				<button onclick={() => act('cancel')} disabled={busy}>Cancel</button>
+			</div>
+		{/if}
+	</div>
+	{#if error}<p class="error">{error}</p>{/if}
 
 	<div class="panel">
 		<dl class="kv">
@@ -61,15 +80,6 @@
 		</dl>
 	</div>
 
-	{#if (d.status === 'awaiting_approval' || d.status === 'pending') && can('operator', d.stack_id)}
-		<p class="actions">
-			{#if d.status === 'awaiting_approval'}
-				<button onclick={() => act('approve')} disabled={busy}>Approve and deploy</button>
-			{/if}
-			<button onclick={() => act('cancel')} disabled={busy}>Cancel</button>
-			{#if error}<span class="error">{error}</span>{/if}
-		</p>
-	{/if}
 
 	<ol class="stages">
 		{#each STAGES as stage (stage)}
@@ -104,16 +114,6 @@
 {/if}
 
 <style>
-	h1 :global(.badge) {
-		font-size: 0.85rem;
-		vertical-align: middle;
-		margin-left: 0.5rem;
-	}
-	.actions {
-		display: flex;
-		gap: 0.8rem;
-		align-items: center;
-	}
 	.stages {
 		display: flex;
 		gap: 0.5rem;

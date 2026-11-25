@@ -3,7 +3,7 @@
 	import { ago } from '../format';
 	import type { SwarmObject } from '../types';
 
-	let { items }: { items: SwarmObject[] } = $props();
+	let { items, empty }: { items: SwarmObject[]; empty: string } = $props();
 </script>
 
 <table>
@@ -19,7 +19,7 @@
 				<td class="muted">{ago(item.updated_at)}</td>
 			</tr>
 		{:else}
-			<tr><td colspan="4" class="muted">None.</td></tr>
+			<tr><td colspan="4" class="muted">{empty}</td></tr>
 		{/each}
 	</tbody>
 </table>

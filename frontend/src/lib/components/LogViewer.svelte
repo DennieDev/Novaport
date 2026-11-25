@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+	import { agentsMissing } from '../format';
 	import { onDestroy, tick, untrack } from 'svelte';
 	import { api, websocketUrl } from '../api';
 
@@ -91,7 +92,7 @@
 	{/if}
 	{#if following}<span class="muted">following…</span>{/if}
 </div>
-{#if error}<p class="error">{error}</p>{/if}
+{#if error}<p class={agentsMissing(error) ? 'muted' : 'error'}>{error}</p>{/if}
 <pre bind:this={pre}>{lines.join('\n') || 'No log output.'}</pre>
 
 <style>

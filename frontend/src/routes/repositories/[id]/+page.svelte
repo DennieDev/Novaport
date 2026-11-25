@@ -3,7 +3,9 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, errorMessage } from '#lib/api.ts';
+	import Crumbs from '#lib/components/Crumbs.svelte';
 	import Badge from '#lib/components/Badge.svelte';
+	import Icon from '#lib/components/Icon.svelte';
 	import Status from '#lib/components/Status.svelte';
 	import { ago } from '#lib/format.ts';
 	import { poll } from '#lib/poll.svelte.ts';
@@ -102,12 +104,19 @@
 	}
 </script>
 
-<p class="crumbs"><a href="/repositories">← Repositories</a></p>
+<Crumbs items={[{ href: '/repositories', label: 'Repositories' }]} />
 <Status loading={repo.loading && !repo.data} error={repo.error} />
 
 {#if repo.data}
 	{@const r = repo.data}
-	<h1>{r.name}</h1>
+	<div class="page-header">
+		<h1>{r.name}</h1>
+		<div class="toolbar">
+			<button onclick={sync} disabled={busy}><Icon name="restart" size={14} />Sync now</button>
+		</div>
+	</div>
+	{#if message}<p class="muted">{message}</p>{/if}
+	{#if error}<p class="error">{error}</p>{/if}
 
 	<div class="panel">
 		<dl class="kv">
@@ -143,11 +152,6 @@
 		<pre class="panel error">{r.last_error}</pre>
 	{/if}
 
-	<p class="actions">
-		<button onclick={sync} disabled={busy}>Sync now</button>
-		{#if message}<span class="muted">{message}</span>{/if}
-		{#if error}<span class="error">{error}</span>{/if}
-	</p>
 
 	{#if r.auth === 'ssh'}
 		<h2>Deploy key</h2>
@@ -249,12 +253,6 @@
 {/if}
 
 <style>
-	.actions {
-		display: flex;
-		gap: 0.8rem;
-		align-items: center;
-		margin-top: 1rem;
-	}
 	pre.key {
 		white-space: pre-wrap;
 		word-break: break-all;

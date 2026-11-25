@@ -3,6 +3,7 @@
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, ApiError, errorMessage } from '#lib/api.ts';
+	import Crumbs from '#lib/components/Crumbs.svelte';
 	import Badge from '#lib/components/Badge.svelte';
 	import CodeEditor from '#lib/components/CodeEditor.svelte';
 	import DeployDialog from '#lib/components/DeployDialog.svelte';
@@ -166,7 +167,12 @@
 	}
 </script>
 
-<p class="crumbs"><a href="/stacks/{id}">← {stack?.name ?? 'Stack'}</a></p>
+<Crumbs
+	items={[
+		{ href: '/stacks', label: 'Stacks' },
+		{ href: `/stacks/${id}`, label: stack?.name ?? 'Stack' }
+	]}
+/>
 
 {#if saved}
 	<h1>Saved</h1>

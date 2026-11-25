@@ -95,11 +95,21 @@ class AiodockerReader:
         )
 
     async def service(self, service_id: str) -> Obj:
-        return await self._call(
+        service: dict[str, Any] = await self._call(
             self._docker._query_json(
                 f"services/{service_id}", method="GET", params={"insertDefaults": "true"}
             )
         )
+        # Inspecting one service leaves out the running and desired task counts; listing gives
+        # them when asked for status.
+        params = {"status": "true", "filters": json.dumps({"id": [service.get("ID", service_id)]})}
+        listed: list[Obj] = await self._call(
+            self._docker._query_json("services", method="GET", params=params)
+        )
+        for item in listed:
+            if item.get("ID") == service.get("ID") and "ServiceStatus" in item:
+                service["ServiceStatus"] = item["ServiceStatus"]
+        return service
 
     async def tasks(self, service_id: str | None = None) -> list[Obj]:
         filters = {"service": service_id} if service_id else None

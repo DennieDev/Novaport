@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+	import Crumbs from '#lib/components/Crumbs.svelte';
 	import { page } from '$app/state';
 	import { api, ApiError, errorMessage } from '#lib/api.ts';
 	import { can } from '#lib/session.svelte.ts';
@@ -84,7 +85,12 @@
 	const shown = $derived([...new Set([...keys, ...Object.keys(edits)])].sort());
 </script>
 
-<p class="crumbs"><a href="/stacks/{id}">← {stack?.name ?? 'Stack'}</a></p>
+<Crumbs
+	items={[
+		{ href: '/stacks', label: 'Stacks' },
+		{ href: `/stacks/${id}`, label: stack?.name ?? 'Stack' }
+	]}
+/>
 <h1>Secrets{stack ? ` for ${stack.name}` : ''}</h1>
 
 {#if sops && !sops.available}

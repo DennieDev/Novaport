@@ -2,6 +2,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api, errorMessage } from '#lib/api.ts';
+	import Crumbs from '#lib/components/Crumbs.svelte';
 	import Badge from '#lib/components/Badge.svelte';
 	import DeployDialog from '#lib/components/DeployDialog.svelte';
 	import DeployProgress from '#lib/components/DeployProgress.svelte';
@@ -131,7 +132,7 @@
 	}
 </script>
 
-<p class="crumbs"><a href="/stacks">Stacks</a></p>
+<Crumbs items={[{ href: '/stacks', label: 'Stacks' }]} />
 
 <DeployDialog
 	bind:open={asking}

@@ -61,7 +61,7 @@ test('deploys a stack and follows it to the end', async () => {
 });
 
 test('shows the containers of the stack with their logs', async () => {
-	await page.getByRole('link', { name: `← ${stack}` }).click();
+	await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: stack }).click();
 	const rows = page.locator('table.tasks tbody tr');
 	await expect(rows).toHaveCount(2);
 	await expect(rows.first()).toContainText('running');

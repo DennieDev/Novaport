@@ -29,6 +29,11 @@ export function ago(iso: string | null | undefined): string {
 	return relative.format(Math.round(seconds), 'second');
 }
 
+/** The agent is a separate, optional service; without it some details just aren't there. */
+export function agentsMissing(error: string | undefined): boolean {
+	return !!error && error.startsWith('No agents configured');
+}
+
 export function shortId(id: string | null | undefined): string {
 	return id ? id.slice(0, 12) : '–';
 }
