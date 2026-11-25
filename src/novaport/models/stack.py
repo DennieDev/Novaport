@@ -175,6 +175,10 @@ class Deployment(Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
     approval_notified: Mapped[bool] = mapped_column(default=False, server_default="false")
+    # Remove services that are no longer in the compose file.
+    prune: Mapped[bool] = mapped_column(default=True, server_default="true")
+    # Pull images from their registries again; otherwise use what the hosts already have.
+    pull_images: Mapped[bool] = mapped_column(default=True, server_default="true")
     approved_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

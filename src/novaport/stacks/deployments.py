@@ -18,6 +18,8 @@ async def queue_deployment(
     trigger: str,
     needs_approval: bool = False,
     user_id: uuid.UUID | None = None,
+    prune: bool = True,
+    pull_images: bool = True,
 ) -> Deployment:
     """Create a deployment and cancel older ones of the same stack that haven't started."""
     await db.execute(
@@ -35,6 +37,8 @@ async def queue_deployment(
         status=DeploymentStatus.AWAITING_APPROVAL if needs_approval else DeploymentStatus.PENDING,
         trigger=trigger,
         triggered_by_id=user_id,
+        prune=prune,
+        pull_images=pull_images,
     )
     db.add(deployment)
     return deployment

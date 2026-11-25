@@ -45,6 +45,9 @@ test('deploys a stack and follows it to the end', async () => {
 	await page.getByRole('link', { name: stack, exact: true }).click();
 	await expect(page.getByRole('heading', { name: stack })).toBeVisible();
 	await page.getByRole('button', { name: /^Deploy/ }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByText('Pull images')).toBeVisible();
+	await dialog.getByRole('button', { name: 'Deploy' }).click();
 
 	// The stack page stays open and shows the deployment above the services.
 	const progress = page.locator('.progress');

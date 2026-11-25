@@ -21,6 +21,8 @@ function deployment(overrides: Partial<Deployment> = {}): Deployment {
 		created_at: new Date().toISOString(),
 		started_at: null,
 		finished_at: null,
+		prune: true,
+		pull_images: true,
 		...overrides
 	};
 }

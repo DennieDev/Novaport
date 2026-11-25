@@ -211,3 +211,37 @@ async def test_edit_files_through_the_api(api: httpx.AsyncClient, origin: Repo) 
 async def test_sops_info_without_key(api: httpx.AsyncClient) -> None:
     info = (await api.get("/api/settings/sops")).json()
     assert info == {"available": False, "recipient": None, "example": None}
+
+
+async def test_save_and_deploy_with_options(api: httpx.AsyncClient, origin: Repo) -> None:
+    origin.write("stacks/web/novaport.yaml", "deploy: manual\n")
+    origin.commit("Manual")
+    repo = await create_repo(api, origin)
+    await api.post(f"/api/repositories/{repo['id']}/sync")
+    stack = (await api.get("/api/stacks")).json()[0]
+    base = (await api.get(f"/api/stacks/{stack['id']}/files")).json()["commit"]
+
+    saved = await api.post(
+        f"/api/stacks/{stack['id']}/files",
+        json={
+            "base_commit": base,
+            "changes": [{"path": ".env", "content": "A=1\n"}],
+            "deploy": {"prune": False, "pull_images": False},
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    deployment_id = saved.json()["deployment_id"]
+    assert deployment_id is not None
+
+    deployment = (await api.get(f"/api/deployments/{deployment_id}")).json()
+    assert deployment["trigger"] == "manual"
+    assert deployment["revision"]["commit"] == origin.head()
+    assert (deployment["prune"], deployment["pull_images"]) == (False, False)
+
+
+async def test_deploy_options_default_to_on(api: httpx.AsyncClient, origin: Repo) -> None:
+    repo = await create_repo(api, origin)
+    await api.post(f"/api/repositories/{repo['id']}/sync")
+    stack = (await api.get("/api/stacks")).json()[0]
+    queued = await api.post(f"/api/stacks/{stack['id']}/deploy", json={})
+    assert (queued.json()["prune"], queued.json()["pull_images"]) == (True, True)

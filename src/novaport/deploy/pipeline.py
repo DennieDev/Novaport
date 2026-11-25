@@ -320,6 +320,8 @@ class Pipeline:
                         RENDERED_FILE,
                         timeout,
                         (env if stack.type == StackType.COMPOSE else {}) | auth_env,
+                        prune=deployment.prune,
+                        pull_images=deployment.pull_images,
                     )
             except CommandTimeout as exc:
                 raise DeployFailed("apply", str(exc)) from exc
@@ -398,13 +400,21 @@ class Pipeline:
             db, deployment, "preflight", "info", "Checking images, mounts, and references"
         )
         stack = deployment.stack
+        if not deployment.pull_images:
+            await self._event(
+                db,
+                deployment,
+                "preflight",
+                "info",
+                "Using the images the hosts already have, so registries aren't checked.",
+            )
         report = await preflight(
             yaml.safe_load(normalized),
             stack.type,
             stack.name,
             reader,
             target.agents,
-            self.registry(),
+            self.registry() if deployment.pull_images else None,
         )
         for note in report.notes:
             await self._event(db, deployment, "preflight", "info", note)

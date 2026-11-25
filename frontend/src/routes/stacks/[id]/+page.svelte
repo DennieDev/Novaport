@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { api, errorMessage } from '#lib/api.ts';
 	import Badge from '#lib/components/Badge.svelte';
+	import DeployDialog from '#lib/components/DeployDialog.svelte';
 	import DeployProgress from '#lib/components/DeployProgress.svelte';
 	import DeploymentRow from '#lib/components/DeploymentRow.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -14,7 +15,14 @@
 	import { onStack, STACK_TOPICS } from '#lib/live.svelte.ts';
 	import { poll } from '#lib/poll.svelte.ts';
 	import { can } from '#lib/session.svelte.ts';
-	import type { Deployment, ImageCheck, Revision, Stack, StackContainers } from '#lib/types.ts';
+	import type {
+		Deployment,
+		DeployOptions,
+		ImageCheck,
+		Revision,
+		Stack,
+		StackContainers
+	} from '#lib/types.ts';
 
 	const id = $derived(page.params.id ?? '');
 	const tab = $derived(page.url.searchParams.get('tab') ?? 'services');
@@ -76,20 +84,28 @@
 		};
 	});
 
-	async function deploy(revision?: Revision) {
-		const s = stack.data;
-		if (!s) return;
-		const what = revision ? `revision ${revision.commit.slice(0, 10)}` : 'the latest revision';
-		if (!confirm(`Deploy ${what} of ${s.name}?`)) return;
+	let asking = $state(false);
+	let toDeploy = $state<Revision | undefined>();
+	const deployTarget = $derived(toDeploy ?? stack.data?.latest_revision ?? undefined);
+
+	function deploy(revision?: Revision) {
+		toDeploy = revision;
+		asking = true;
+	}
+
+	async function confirmDeploy(options: DeployOptions) {
 		busy = true;
 		error = undefined;
 		try {
 			const d = await api.post<Deployment>(`/stacks/${id}/deploy`, {
-				revision_id: revision?.id ?? null
+				revision_id: toDeploy?.id ?? null,
+				...options
 			});
+			asking = false;
 			watching = d.id;
 			await deployments.refresh();
 		} catch (e) {
+			asking = false;
 			error = errorMessage(e);
 		} finally {
 			busy = false;
@@ -116,6 +132,24 @@
 </script>
 
 <p class="crumbs"><a href="/stacks">Stacks</a></p>
+
+<DeployDialog
+	bind:open={asking}
+	title="Deploy {stack.data?.name ?? ''}"
+	{busy}
+	onconfirm={confirmDeploy}
+>
+	{#if deployTarget}
+		<p>
+			<code>{deployTarget.commit.slice(0, 10)}</code>
+			{deployTarget.message}
+			<span class="muted">· {deployTarget.author}, {ago(deployTarget.committed_at)}</span>
+		</p>
+		{#if toDeploy && toDeploy.id !== stack.data?.latest_revision?.id}
+			<p class="muted">An older revision: this rolls the stack back to it.</p>
+		{/if}
+	{/if}
+</DeployDialog>
 <Status loading={stack.loading && !stack.data} error={stack.error} />
 
 {#if stack.data}

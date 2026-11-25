@@ -299,6 +299,13 @@ export interface Deployment {
 	created_at: string;
 	started_at: string | null;
 	finished_at: string | null;
+	prune: boolean;
+	pull_images: boolean;
+}
+
+export interface DeployOptions {
+	prune: boolean;
+	pull_images: boolean;
 }
 
 export interface DeploymentDetail extends Deployment {
@@ -402,6 +409,7 @@ export interface SaveResult {
 	pull_request_url: string | null;
 	new_revisions: number;
 	queued_deployments: number;
+	deployment_id: string | null;
 }
 
 export interface SecretsData {

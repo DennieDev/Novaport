@@ -57,6 +57,7 @@ class FakeCli:
     apply_env: dict[str, str] = field(default_factory=dict)
     secret_files: dict[str, str] = field(default_factory=dict)
     removed_secrets: list[str] = field(default_factory=list)
+    apply_options: dict[str, bool] = field(default_factory=dict)
 
     async def config(
         self,
@@ -80,8 +81,12 @@ class FakeCli:
         compose_file: str,
         wait_seconds: int,
         env: Mapping[str, str],
+        *,
+        prune: bool = True,
+        pull_images: bool = True,
     ) -> Result:
         self.calls.append(f"apply {stack_type} {name} {compose_file}")
+        self.apply_options = {"prune": prune, "pull_images": pull_images}
         self.rendered = yaml.safe_load((folder / compose_file).read_text())
         self.apply_env = dict(env)
         secrets_dir = folder / ".novaport-secrets"
@@ -224,10 +229,10 @@ async def test_registry_logins_reach_the_deploy(env: Env) -> None:
     seen: dict[str, str] = {}
     original = env.cli.apply
 
-    async def apply(*args: Any) -> Result:
+    async def apply(*args: Any, **options: bool) -> Result:
         config = Path(args[-1]["DOCKER_CONFIG"]) / "config.json"
         seen.update(json.loads(config.read_text())["auths"])
-        return await original(*args)
+        return await original(*args, **options)
 
     async def logins() -> dict[str, Login]:
         return {"ghcr.io": Login("bot", "pw")}
@@ -456,3 +461,22 @@ async def test_missing_mirror_is_fetched_again(env: Env) -> None:
     shutil.rmtree(mirror_path(env.settings, stack.repository_id))
     env.pipeline.ensure_commit = lambda s, commit: env.syncer.ensure_commit(s.repository, commit)
     assert await env.pipeline.run(deployment_id) == DeploymentStatus.SUCCEEDED
+
+
+async def test_deploy_options_reach_the_cli_and_skip_the_registry_check(env: Env) -> None:
+    deployment_id = await env.setup()
+    async with env.maker() as db:
+        d = await db.get(Deployment, deployment_id)
+        assert d is not None
+        d.prune = False
+        d.pull_images = False
+        await db.commit()
+    assert await env.pipeline.run(deployment_id) == DeploymentStatus.SUCCEEDED
+    assert env.cli.apply_options == {"prune": False, "pull_images": False}
+    d = await env.deployment(deployment_id)
+    assert any("registries aren't checked" in e.message for e in d.events)
+
+
+async def test_deploy_options_default_to_pruning_and_pulling(env: Env) -> None:
+    assert await env.pipeline.run(await env.setup()) == DeploymentStatus.SUCCEEDED
+    assert env.cli.apply_options == {"prune": True, "pull_images": True}

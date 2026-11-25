@@ -51,6 +51,8 @@ class DeploymentOut(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    prune: bool
+    pull_images: bool
 
 
 class EventOut(BaseModel):
@@ -90,7 +92,14 @@ class StackOut(BaseModel):
     drift_checked_at: datetime | None
 
 
-class DeployRequest(BaseModel):
+class DeployOptions(BaseModel):
+    # Remove services that are no longer in the compose file.
+    prune: bool = True
+    # Pull images again; otherwise use the ones the hosts already have.
+    pull_images: bool = True
+
+
+class DeployRequest(DeployOptions):
     revision_id: uuid.UUID | None = None
 
 
@@ -111,6 +120,8 @@ def deployment_out(d: Deployment) -> DeploymentOut:
         created_at=d.created_at,
         started_at=d.started_at,
         finished_at=d.finished_at,
+        prune=d.prune,
+        pull_images=d.pull_images,
     )
 
 
@@ -276,9 +287,24 @@ async def deploy_stack(
     if revision is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Revision not found.")
     _check_separate_approver(request, access, stack, revision, "stack.deploy")
+    deployment = await deploy_now(db, access, stack, revision, body)
+    await db.commit()
+    _wake(request)
+    return deployment_out(await _get_deployment(db, deployment.id))
 
+
+async def deploy_now(
+    db: DB, access: Access, stack: Stack, revision: Revision, options: DeployOptions
+) -> Deployment:
+    """Queue a deployment someone asked for, and audit it. The caller commits."""
     deployment = await queue_deployment(
-        db, stack, revision, trigger="manual", user_id=access.user.id
+        db,
+        stack,
+        revision,
+        trigger="manual",
+        user_id=access.user.id,
+        prune=options.prune,
+        pull_images=options.pull_images,
     )
     await db.flush()
     access.audit(
@@ -286,11 +312,14 @@ async def deploy_stack(
         "stack.deploy",
         target=stack.name,
         stack_id=stack.id,
-        details={"commit": revision.commit, "deployment": str(deployment.id)},
+        details={
+            "commit": revision.commit,
+            "deployment": str(deployment.id),
+            "prune": options.prune,
+            "pull_images": options.pull_images,
+        },
     )
-    await db.commit()
-    _wake(request)
-    return deployment_out(await _get_deployment(db, deployment.id))
+    return deployment
 
 
 @router.get("/deployments")

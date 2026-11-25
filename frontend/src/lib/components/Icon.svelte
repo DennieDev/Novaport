@@ -23,7 +23,11 @@
 		edit: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
 		logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
 		menu: 'M4 6h16M4 12h16M4 18h16',
-		chevron: 'M9 6l6 6-6 6'
+		chevron: 'M9 6l6 6-6 6',
+		file: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5',
+		trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
+		plus: 'M12 5v14M5 12h14',
+		undo: 'M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3'
 	} as const;
 
 	export type IconName = keyof typeof paths;

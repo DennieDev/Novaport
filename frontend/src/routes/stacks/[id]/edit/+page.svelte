@@ -1,13 +1,17 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, ApiError, errorMessage } from '#lib/api.ts';
+	import Badge from '#lib/components/Badge.svelte';
 	import CodeEditor from '#lib/components/CodeEditor.svelte';
+	import DeployDialog from '#lib/components/DeployDialog.svelte';
+	import Icon from '#lib/components/Icon.svelte';
 	import MergeEditor from '#lib/components/MergeEditor.svelte';
 	import { can } from '#lib/session.svelte.ts';
 	import type {
 		ConflictBody,
+		DeployOptions,
 		FileConflict,
 		SaveResult,
 		Stack,
@@ -18,6 +22,7 @@
 	const editable = $derived(can('editor', id));
 
 	let stack = $state<Stack | undefined>();
+	const canDeploy = $derived(can('operator', id) && stack?.edit_mode !== 'pr');
 	let base = $state('');
 	// Content as it is in git (null = file doesn't exist there) and as edited (null = deleted).
 	let original = $state<Record<string, string | null>>({});
@@ -30,6 +35,9 @@
 	let saved = $state<SaveResult | undefined>();
 	let busy = $state(false);
 	let conflict = $state<{ tip: string; files: (FileConflict & { resolved: string })[] }>();
+	// Set when saving should also deploy; kept while a conflict or validation error is resolved.
+	let deployOptions = $state<DeployOptions | undefined>();
+	let askingDeploy = $state(false);
 
 	const paths = $derived(
 		Object.keys({ ...original, ...current }).sort((a, b) =>
@@ -37,6 +45,12 @@
 		)
 	);
 	const changed = $derived(paths.filter((p) => original[p] !== current[p]));
+
+	function fileState(path: string): 'new' | 'deleted' | 'modified' | undefined {
+		if (original[path] === current[path]) return undefined;
+		if (current[path] === null) return 'deleted';
+		return original[path] === undefined ? 'new' : 'modified';
+	}
 
 	async function load() {
 		error = undefined;
@@ -93,13 +107,17 @@
 		error = undefined;
 		invalid = undefined;
 		try {
-			saved = await api.post<SaveResult>(`/stacks/${id}/files`, {
+			const result = await api.post<SaveResult>(`/stacks/${id}/files`, {
 				base_commit: baseCommit,
 				changes,
 				message: message.trim() || null,
-				validate_compose: validate
+				validate_compose: validate,
+				deploy: deployOptions ?? null
 			});
+			saved = result;
 			conflict = undefined;
+			askingDeploy = false;
+			if (result.deployment_id) await goto(`/stacks/${id}`);
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 409) {
 				const body = e.body as ConflictBody;
@@ -112,9 +130,20 @@
 			} else {
 				error = errorMessage(e);
 			}
+			askingDeploy = false;
 		} finally {
 			busy = false;
 		}
+	}
+
+	function saveAndDeploy(options: DeployOptions) {
+		deployOptions = options;
+		return saveChanges();
+	}
+
+	function saveOnly() {
+		deployOptions = undefined;
+		return saveChanges();
 	}
 
 	function saveChanges(validate = true) {
@@ -176,7 +205,9 @@
 		{/if}
 	{/each}
 	<p class="actions">
-		<button onclick={() => saveResolved()} disabled={busy}>Save resolved version</button>
+		<button onclick={() => saveResolved()} disabled={busy}>
+			{deployOptions ? 'Save resolved version and deploy' : 'Save resolved version'}
+		</button>
 		<button onclick={load} disabled={busy}>Discard my changes and reload</button>
 		{#if error}<span class="error">{error}</span>{/if}
 	</p>
@@ -185,38 +216,85 @@
 		<button onclick={() => saveResolved(false)} disabled={busy}>Commit anyway</button>
 	{/if}
 {:else if stack}
-	<h1>{editable ? 'Edit' : 'Files of'} {stack.name}</h1>
-	{#if !editable}
-		<p class="muted">Read only: editing needs the editor role on this stack.</p>
-	{:else if stack.edit_mode === 'pr'}
-		<p class="muted">Changes go to a new branch with a pull request.</p>
-	{:else}
-		<p class="muted">Changes are committed to the branch and then follow the stack's deploy mode ({stack.deploy_mode}).</p>
-	{/if}
+	<DeployDialog
+		bind:open={askingDeploy}
+		title="Save and deploy {stack.name}"
+		confirmLabel="Save and deploy"
+		busy={busy}
+		onconfirm={saveAndDeploy}
+	>
+		<p>
+			Commits {changed.length} change{changed.length === 1 ? '' : 's'} to
+			<code>{stack.repository.name}</code>, then deploys the new revision.
+		</p>
+	</DeployDialog>
+
+	<div class="page-header">
+		<div>
+			<h1>{editable ? 'Edit' : 'Files of'} {stack.name}</h1>
+			<p class="subtitle">
+				{#if !editable}
+					Read only: editing needs the editor role on this stack.
+				{:else if stack.edit_mode === 'pr'}
+					Saving opens a pull request; nothing is deployed until it's merged.
+				{:else}
+					Saving commits to the branch. Without deploying, the stack follows its deploy mode
+					({stack.deploy_mode}).
+				{/if}
+			</p>
+		</div>
+		<div class="toolbar">
+			<a class="button" href="/stacks/{id}/secrets"><Icon name="secrets" size={14} />Secrets</a>
+		</div>
+	</div>
 
 	<div class="layout">
-		<aside>
+		<aside class="panel files">
+			<div class="files-head">
+				<span class="label">Files</span>
+				{#if editable}
+					<button class="icon" onclick={addFile} title="Add a file" aria-label="Add a file">
+						<Icon name="plus" size={15} />
+					</button>
+				{/if}
+			</div>
 			<ul>
 				{#each paths as path (path)}
-					<li class:active={selected === path} class:deleted={current[path] === null}>
-						<button class="link" onclick={() => (selected = path)} disabled={current[path] === null || binary.includes(path)}>
-							{path}{original[path] !== current[path] ? ' •' : ''}
+					{@const status = fileState(path)}
+					<li class:active={selected === path} class:deleted={status === 'deleted'}>
+						<button
+							class="file"
+							onclick={() => (selected = path)}
+							disabled={status === 'deleted' || binary.includes(path)}
+							title={binary.includes(path) ? 'Binary file' : path}
+						>
+							<Icon name="file" size={14} />
+							<span class="path">{path}</span>
 						</button>
+						{#if status}
+							<Badge
+								value={status}
+								tone={status === 'deleted' ? 'bad' : status === 'new' ? 'ok' : 'warn'}
+							/>
+						{/if}
 						{#if !editable}
 							<!-- read only -->
-						{:else if current[path] === null}
-							<button class="link small" onclick={() => restoreFile(path)}>restore</button>
+						{:else if status === 'deleted'}
+							<button class="icon" onclick={() => restoreFile(path)} title="Restore {path}">
+								<Icon name="undo" size={14} />
+							</button>
 						{:else}
-							<button class="link small" onclick={() => removeFile(path)}>delete</button>
+							<button class="icon hover" onclick={() => removeFile(path)} title="Delete {path}">
+								<Icon name="trash" size={14} />
+							</button>
 						{/if}
 					</li>
 				{/each}
 			</ul>
-			{#if editable}<button onclick={addFile}>Add file</button>{/if}
-			<p><a href="/stacks/{id}/secrets">Secrets →</a></p>
 		</aside>
-		<section>
+		<section class="panel editor">
 			{#if selected && current[selected] !== null && current[selected] !== undefined}
+				<div class="editor-head"><code>{selected}</code></div>
 				<div class="editor-wrap">
 					<CodeEditor
 						bind:value={current[selected] as string}
@@ -225,17 +303,30 @@
 					/>
 				</div>
 			{:else}
-				<p class="muted">Select a file.</p>
+				<p class="muted empty">Select a file.</p>
 			{/if}
 		</section>
 	</div>
 
-	<div class="save" hidden={!editable}>
-		<input bind:value={message} placeholder="Commit message (optional)" maxlength="5000" />
-		<button onclick={() => saveChanges()} disabled={busy || changed.length === 0}>
-			{busy ? 'Saving…' : `Save ${changed.length || ''} change${changed.length === 1 ? '' : 's'}`}
-		</button>
-	</div>
+	{#if editable}
+		<div class="panel save">
+			<input bind:value={message} placeholder="Commit message (optional)" maxlength="5000" />
+			<button onclick={saveOnly} disabled={busy || changed.length === 0}>
+				{busy && !deployOptions
+					? 'Saving…'
+					: `Save${changed.length ? ` ${changed.length} change${changed.length === 1 ? '' : 's'}` : ''}`}
+			</button>
+			{#if canDeploy}
+				<button
+					class="primary"
+					onclick={() => (askingDeploy = true)}
+					disabled={busy || changed.length === 0}
+				>
+					<Icon name="deploy" size={14} />Save and deploy
+				</button>
+			{/if}
+		</div>
+	{/if}
 	{#if invalid}
 		<pre class="panel error">{invalid}</pre>
 		<button onclick={() => saveChanges(false)} disabled={busy}>Commit anyway</button>
@@ -250,39 +341,125 @@
 <style>
 	.layout {
 		display: grid;
-		grid-template-columns: 240px 1fr;
+		grid-template-columns: 260px 1fr;
 		gap: 1rem;
-		margin-top: 1rem;
+		align-items: start;
 	}
-	aside ul {
+	.files {
+		padding: 0.5rem;
+	}
+	.files-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.2rem 0.4rem 0.5rem;
+	}
+	.label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--muted);
+	}
+	.files ul {
 		list-style: none;
 		padding: 0;
-		margin: 0 0 0.75rem;
+		margin: 0;
 	}
-	aside li {
+	.files li {
 		display: flex;
-		justify-content: space-between;
-		gap: 0.5rem;
-		padding: 0.2rem 0.4rem;
-		border-radius: 4px;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.1rem 0.25rem;
+		border-radius: 6px;
 	}
-	aside li.active {
-		background: var(--code);
+	.files li:hover {
+		background: var(--panel-alt);
 	}
-	aside li.deleted button:first-child {
+	.files li.active {
+		background: var(--accent-soft);
+	}
+	.file {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		flex: 1;
+		min-width: 0;
+		padding: 0.35rem 0.25rem;
+		border: none;
+		background: none;
+		color: var(--fg);
+		text-align: left;
+		font: inherit;
+		cursor: pointer;
+	}
+	.file:disabled {
+		cursor: default;
+	}
+	.files li.active .file {
+		color: var(--accent);
+		font-weight: 500;
+	}
+	.files li.deleted .path {
 		text-decoration: line-through;
-	}
-	.small {
-		font-size: 0.8rem;
 		color: var(--muted);
+	}
+	.path {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 26px;
+		height: 26px;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--muted);
+		border-radius: 6px;
+		cursor: pointer;
+	}
+	.icon:hover {
+		color: var(--fg);
+		background: var(--panel-alt);
+	}
+	.icon.hover {
+		visibility: hidden;
+	}
+	.files li:hover .icon.hover,
+	.files li.active .icon.hover,
+	.icon.hover:focus-visible {
+		visibility: visible;
+	}
+	.editor {
+		padding: 0;
+		overflow: hidden;
+	}
+	.editor-head {
+		padding: 0.5rem 0.9rem;
+		border-bottom: 1px solid var(--border);
+		background: var(--panel-alt);
+	}
+	.editor-head code {
+		background: none;
+		padding: 0;
 	}
 	.editor-wrap {
 		height: 60vh;
 	}
+	.empty {
+		padding: 1rem;
+		margin: 0;
+	}
 	.save {
 		display: flex;
-		gap: 0.75rem;
+		align-items: center;
+		gap: 0.6rem;
 		margin-top: 1rem;
+		padding: 0.75rem;
 	}
 	.save input {
 		flex: 1;

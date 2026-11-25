@@ -27,6 +27,9 @@ class DockerCli(Protocol):
         compose_file: str,
         wait_seconds: int,
         env: Mapping[str, str],
+        *,
+        prune: bool = True,
+        pull_images: bool = True,
     ) -> Result: ...
 
     async def remove_secrets(self, names: list[str]) -> Result: ...
@@ -67,6 +70,9 @@ class SubprocessDockerCli:
         compose_file: str,
         wait_seconds: int,
         env: Mapping[str, str],
+        *,
+        prune: bool = True,
+        pull_images: bool = True,
     ) -> Result:
         if stack_type == StackType.SWARM:
             args = [
@@ -76,7 +82,9 @@ class SubprocessDockerCli:
                 "--compose-file",
                 compose_file,
                 "--with-registry-auth",
-                "--prune",
+                # `never` leaves the tag unpinned, so each node uses the image it has.
+                f"--resolve-image={'always' if pull_images else 'never'}",
+                *(["--prune"] if prune else []),
                 "--detach=true",
                 name,
             ]
@@ -91,7 +99,8 @@ class SubprocessDockerCli:
                 compose_file,
                 "up",
                 "--detach",
-                "--remove-orphans",
+                f"--pull={'always' if pull_images else 'missing'}",
+                *(["--remove-orphans"] if prune else []),
                 "--wait",
                 "--wait-timeout",
                 str(wait_seconds),

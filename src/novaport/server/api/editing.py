@@ -9,8 +9,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from novaport.auth.access import Access
+from novaport.config import Settings
 from novaport.locks import LockTimeout
-from novaport.models import Outcome, Role, Stack
+from novaport.models import DeployMode, Outcome, Revision, Role, Stack
+from novaport.server.api.stacks import DeployOptions, deploy_now
 from novaport.server.deps import DB, CurrentAccess, current_user
 from novaport.sops import KEY_PATTERN, Sops
 from novaport.stacks.editing import (
@@ -47,6 +49,8 @@ class SaveFiles(BaseModel):
     changes: list[FileChange] = Field(min_length=1, max_length=100)
     message: str | None = Field(default=None, max_length=5000)
     validate_compose: bool = True
+    # Deploy the new revision right away, whatever the stack's deploy mode.
+    deploy: DeployOptions | None = None
 
 
 class SaveSecrets(BaseModel):
@@ -68,6 +72,8 @@ class SaveResult(BaseModel):
     pull_request_url: str | None
     new_revisions: int
     queued_deployments: int
+    # Set when saving also deployed the new revision.
+    deployment_id: uuid.UUID | None = None
 
 
 class SopsInfo(BaseModel):
@@ -169,6 +175,15 @@ async def save_files(
 ) -> SaveResult | JSONResponse:
     access.require(Role.EDITOR, stack_id, action="stack.edit")
     stack = await _stack(db, stack_id)
+    if body.deploy is not None:
+        access.require(Role.OPERATOR, stack_id, action="stack.deploy")
+        settings: Settings = request.app.state.settings
+        if settings.separate_approver and stack.deploy_mode == DeployMode.APPROVE:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Someone other than the author has to approve this change, so it can't be "
+                "deployed when saving.",
+            )
     paths = [c.path for c in body.changes]
     details: dict[str, object] = {"files": paths}
     try:
@@ -187,7 +202,21 @@ async def save_files(
         await _audit_save(db, access, "stack.edit", stack, details, error=exc)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     await _audit_save(db, access, "stack.edit", stack, details, result)
-    return save_result(request, result)
+    saved = save_result(request, result)
+    if body.deploy is not None and result.pull_request_url is None:
+        revision = await db.scalar(
+            select(Revision)
+            .where(Revision.stack_id == stack.id, Revision.commit == result.commit)
+            .order_by(Revision.created_at.desc())
+            .limit(1)
+        )
+        if revision is not None:
+            deployment = await deploy_now(db, access, stack, revision, body.deploy)
+            await db.commit()
+            if request.app.state.jobs is not None:
+                request.app.state.jobs.wake()
+            saved.deployment_id = deployment.id
+    return saved
 
 
 @router.get("/stacks/{stack_id}/secrets")
