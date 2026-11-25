@@ -1,4 +1,4 @@
-# Running Novaport
+# Running Swarmer
 
 ## Installing
 
@@ -8,13 +8,13 @@ agent on every node, and Postgres, behind Traefik. Copy
 directories, and deploy from that directory:
 
 ```sh
-mkdir -p /data/novaport/data /data/novaport/postgres
-NOVAPORT_IMAGE=ghcr.io/denniedev/novaport:0.1.0 docker stack deploy -c docker-compose.yml novaport
+mkdir -p /data/swarmer/data /data/swarmer/postgres
+SWARMER_IMAGE=ghcr.io/dennielabs/swarmer:0.1.0 docker stack deploy -c docker-compose.yml swarmer
 ```
 
 Pin a version rather than `latest`, so a redeploy never upgrades by accident.
 
-Log in as `admin` with the password from `NOVAPORT_INITIAL_ADMIN_PASSWORD`. It is only read
+Log in as `admin` with the password from `SWARMER_INITIAL_ADMIN_PASSWORD`. It is only read
 while there are no users, so you can remove it afterwards.
 
 Traefik reads the labels on the server service through its swarm provider (Traefik v3) and
@@ -25,11 +25,11 @@ docker network create -d overlay --attachable traefik
 ```
 
 Compose containers can join that network too. With another proxy, drop the labels and the
-`traefik` network. Novaport listens on port 8000 without TLS; the proxy has to terminate TLS and
+`traefik` network. Swarmer listens on port 8000 without TLS; the proxy has to terminate TLS and
 pass WebSocket upgrades (logs, terminals, and live updates use them). Set:
 
-- `NOVAPORT_PUBLIC_URL` to the external address, for OIDC redirect URIs and edge agent keys.
-- `NOVAPORT_TRUSTED_PROXIES` to the proxy's address or network, so client IPs in the audit log
+- `SWARMER_PUBLIC_URL` to the external address, for OIDC redirect URIs and edge agent keys.
+- `SWARMER_TRUSTED_PROXIES` to the proxy's address or network, so client IPs in the audit log
   come from `X-Forwarded-For`. Swarm overlay networks use `10.0.0.0/8` unless the Swarm was set
   up with another address pool.
 
@@ -38,9 +38,9 @@ the service spec, use Swarm secrets instead (see below).
 
 ## Configuration
 
-Everything is set through `NOVAPORT_*` environment variables. Any of them can also be a Swarm
-secret named after the variable in lower case: `novaport_database_url` for
-`NOVAPORT_DATABASE_URL`. Durations take values such as `30s`, `5m`, `6h`, or `90d`.
+Everything is set through `SWARMER_*` environment variables. Any of them can also be a Swarm
+secret named after the variable in lower case: `swarmer_database_url` for
+`SWARMER_DATABASE_URL`. Durations take values such as `30s`, `5m`, `6h`, or `90d`.
 
 | Variable | Default | |
 | --- | --- | --- |
@@ -55,7 +55,7 @@ secret named after the variable in lower case: `novaport_database_url` for
 | `SESSION_IDLE_TIMEOUT` | `8h` | Logs out after this long without requests. |
 | `SESSION_MAX_AGE` | `7d` | Logs out after this long regardless. |
 | `SEPARATE_APPROVER` | `false` | Authors can't approve their own changes. |
-| `COMMIT_NAME`, `COMMIT_EMAIL` | `Novaport`, `novaport@localhost` | Committer of Novaport's commits; the author is the logged-in user. |
+| `COMMIT_NAME`, `COMMIT_EMAIL` | `Swarmer`, `swarmer@localhost` | Committer of Swarmer's commits; the author is the logged-in user. |
 | `UPDATE_INTERVAL` | `6h` | How often `x-updates` policies are checked. |
 | `DRIFT_INTERVAL` | `5m` | How often running services are compared with the last deploy. |
 | `DEPLOY_TIMEOUT` | `5m` | How long a rollout may take to converge. |
@@ -64,12 +64,12 @@ secret named after the variable in lower case: `novaport_database_url` for
 | `AUDIT_RETENTION` | `365d` | Audit log history. `0d` keeps everything. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SECURITY`, `SMTP_FROM` | port `587`, `starttls` | Outgoing mail for email notifications. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warning`, or `error`. |
-| `DATA_DIR` | `/var/lib/novaport` | Git checkouts. Novaport recreates them from the remotes if lost. |
+| `DATA_DIR` | `/var/lib/swarmer` | Git checkouts. Swarmer recreates them from the remotes if lost. |
 | `MIGRATE_ON_START` | `true` | Apply database migrations when the server starts. |
 
 ## Webhooks
 
-Novaport polls each repository (every 5 minutes by default), and a webhook makes it sync right
+Swarmer polls each repository (every 5 minutes by default), and a webhook makes it sync right
 after a push. The repository's page shows the webhook URL and secret. Add a push webhook in the
 forge:
 
@@ -79,10 +79,10 @@ forge:
 
 Requests with a wrong signature get a 401 and are ignored.
 
-## Managing Novaport with Novaport
+## Managing Swarmer with Swarmer
 
-Once a repository is added, Novaport can manage its own stack like any other. Under Stacks,
-Deployed without Novaport, add `novaport` to the repository:
+Once a repository is added, Swarmer can manage its own stack like any other. Under Stacks,
+Deployed without Swarmer, add `swarmer` to the repository:
 
 - Values that look like passwords, keys, or tokens (the secret key, the age key, the database
   password and URL) go to the stack's `secrets.env`, encrypted with the age keys in the
@@ -92,9 +92,9 @@ Deployed without Novaport, add `novaport` to the repository:
   stops the old one when the new one is healthy. A deployment that was converging when the old
   server stopped is finished by the new one.
 - Deploy only when asked (`deploy: manual`) is the default and the safer choice. Every deploy
-  of this stack restarts Novaport.
+  of this stack restarts Swarmer.
 
-Keep the `docker-compose.yml` and `.env` you installed with. If a change ever keeps Novaport
+Keep the `docker-compose.yml` and `.env` you installed with. If a change ever keeps Swarmer
 from starting, revert it in git and deploy those files by hand, as when installing.
 
 Change the database service with care: a deploy that restarts Postgres interrupts the server
@@ -106,7 +106,7 @@ Scripts use the same API as the UI, authenticated with a token instead of a logi
 under Account, API tokens, and send it as a bearer token:
 
 ```sh
-curl -H "Authorization: Bearer np_..." https://novaport.example.com/api/stacks
+curl -H "Authorization: Bearer sw_..." https://swarmer.example.com/api/stacks
 ```
 
 A token acts as the user who created it, with no role higher than the one picked for it. Every
@@ -122,9 +122,9 @@ The API is described at `/api/docs`.
 Three keys matter, and only the first is in the database:
 
 - **The Postgres database** holds users, settings, history, and the encrypted credentials.
-- **`NOVAPORT_SECRET_KEY`** encrypts git, registry, forge, notification, and OIDC credentials.
+- **`SWARMER_SECRET_KEY`** encrypts git, registry, forge, notification, and OIDC credentials.
   Without it, those credentials can't be read and have to be entered again.
-- **`NOVAPORT_AGE_KEY`** decrypts `secrets.env` files. Without it, stacks with secrets can't be
+- **`SWARMER_AGE_KEY`** decrypts `secrets.env` files. Without it, stacks with secrets can't be
   deployed, and the secrets in git can only be recovered with another recipient's key. Keep a
   copy outside the cluster, or list a second age key (kept offline) in `.sops.yaml`.
 
@@ -138,27 +138,27 @@ Back up the database and keep copies of the two keys. Git checkouts don't need a
 With the stack file, Postgres runs on a manager. On that node:
 
 ```sh
-docker exec "$(docker ps -q -f name=novaport_postgres)" \
-  pg_dump -U novaport -Fc novaport > novaport-$(date +%F).dump
+docker exec "$(docker ps -q -f name=swarmer_postgres)" \
+  pg_dump -U swarmer -Fc swarmer > swarmer-$(date +%F).dump
 ```
 
 To restore, stop the server, restore, and start it again:
 
 ```sh
-docker service scale novaport_server=0
-docker exec -i "$(docker ps -q -f name=novaport_postgres)" \
-  pg_restore -U novaport -d novaport --clean --if-exists < novaport-2026-11-24.dump
-docker service scale novaport_server=1
+docker service scale swarmer_server=0
+docker exec -i "$(docker ps -q -f name=swarmer_postgres)" \
+  pg_restore -U swarmer -d swarmer --clean --if-exists < swarmer-2026-11-24.dump
+docker service scale swarmer_server=1
 ```
 
-A restored database needs the `NOVAPORT_SECRET_KEY` it was created with.
+A restored database needs the `SWARMER_SECRET_KEY` it was created with.
 
 ## Upgrading
 
 Read the release notes, back up the database, and deploy the new version:
 
 ```sh
-NOVAPORT_IMAGE=ghcr.io/denniedev/novaport:0.2.0 docker stack deploy -c docker-compose.yml novaport
+SWARMER_IMAGE=ghcr.io/dennielabs/swarmer:0.2.0 docker stack deploy -c docker-compose.yml swarmer
 ```
 
 This updates the server and every agent together; keep them on the same version. The server

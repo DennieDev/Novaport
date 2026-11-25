@@ -2,8 +2,8 @@
 import pytest
 from starlette.datastructures import Headers
 
-from novaport.auth.ratelimit import LoginThrottle
-from novaport.server.origin import is_cross_site
+from swarmer.auth.ratelimit import LoginThrottle
+from swarmer.server.origin import is_cross_site
 
 
 @pytest.mark.parametrize(
@@ -14,8 +14,8 @@ from novaport.server.origin import is_cross_site
         ({"sec-fetch-site": "none"}, False),
         ({"sec-fetch-site": "same-site"}, True),
         ({"sec-fetch-site": "cross-site"}, True),
-        ({"origin": "https://novaport.example", "host": "novaport.example"}, False),
-        ({"origin": "https://evil.example", "host": "novaport.example"}, True),
+        ({"origin": "https://swarmer.example", "host": "swarmer.example"}, False),
+        ({"origin": "https://evil.example", "host": "swarmer.example"}, True),
     ],
 )
 def test_is_cross_site(headers: dict[str, str], expected: bool) -> None:

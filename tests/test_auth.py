@@ -8,10 +8,10 @@ from pydantic import SecretStr
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from novaport.auth.passwords import WeakPassword
-from novaport.auth.users import create_admin
-from novaport.models import Session
-from novaport.server.app import create_app
+from swarmer.auth.passwords import WeakPassword
+from swarmer.auth.users import create_admin
+from swarmer.models import Session
+from swarmer.server.app import create_app
 from tests.conftest import client_for, make_settings
 from tests.fakes import FakeReader
 
@@ -38,7 +38,7 @@ async def test_initial_admin_can_log_in(app_client: httpx.AsyncClient) -> None:
     response = await login(app_client)
     assert response.status_code == 204
     cookie = response.headers["set-cookie"]
-    assert "novaport_session=" in cookie
+    assert "swarmer_session=" in cookie
     assert "HttpOnly" in cookie
     assert "SameSite=lax" in cookie
 

@@ -11,10 +11,10 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from novaport.auth.passwords import hash_password
-from novaport.models import Repository, Role, RoleBinding, Stack, StackType, User
-from novaport.server.api.containers import ContainerRow, ServiceRow, stack_health
-from novaport.server.app import create_app
+from swarmer.auth.passwords import hash_password
+from swarmer.models import Repository, Role, RoleBinding, Stack, StackType, User
+from swarmer.server.api.containers import ContainerRow, ServiceRow, stack_health
+from swarmer.server.app import create_app
 from tests.conftest import client_for, make_settings
 from tests.fakes import TASKS, FakeAgents, FakeReader
 from tests.test_pipeline import FakeCli

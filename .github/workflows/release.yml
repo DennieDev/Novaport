@@ -67,7 +67,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/denniedev/novaport
+          images: ghcr.io/dennielabs/swarmer
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -86,7 +86,7 @@ jobs:
           cache-to: type=gha,scope=release,mode=max
       - uses: actions/attest-build-provenance@v4
         with:
-          subject-name: ghcr.io/denniedev/novaport
+          subject-name: ghcr.io/dennielabs/swarmer
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
       - name: Create the GitHub release

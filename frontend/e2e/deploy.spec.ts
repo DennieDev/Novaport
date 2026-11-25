@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { expect, test, type Page } from '@playwright/test';
 
-const password = process.env.NOVAPORT_E2E_PASSWORD ?? '';
-const repoUrl = process.env.NOVAPORT_E2E_REPO ?? '';
-const stack = process.env.NOVAPORT_E2E_STACK ?? 'web';
+const password = process.env.SWARMER_E2E_PASSWORD ?? '';
+const repoUrl = process.env.SWARMER_E2E_REPO ?? '';
+const stack = process.env.SWARMER_E2E_STACK ?? 'web';
 
 test.describe.configure({ mode: 'serial' });
 

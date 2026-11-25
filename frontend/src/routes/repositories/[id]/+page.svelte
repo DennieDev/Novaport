@@ -60,7 +60,7 @@
 	async function remove() {
 		if (!repo.data) return;
 		const ok = confirm(
-			`Remove ${repo.data.name} and its ${repo.data.stack_count} stack(s) from Novaport? ` +
+			`Remove ${repo.data.name} and its ${repo.data.stack_count} stack(s) from Swarmer? ` +
 				'Running services are not touched.'
 		);
 		if (!ok) return;

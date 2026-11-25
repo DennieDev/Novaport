@@ -5,11 +5,11 @@ from pathlib import Path
 import httpx
 import pytest
 
-from novaport.registries.client import Login, RegistryClient, RegistryError
-from novaport.registries.reference import InvalidReference, parse_reference
-from novaport.registries.store import docker_config
-from novaport.updates.policy import Allow, Mode, Policy, infer_pattern, newer_tag, read_policies
-from novaport.updates.rewrite import RewriteError, replace_image
+from swarmer.registries.client import Login, RegistryClient, RegistryError
+from swarmer.registries.reference import InvalidReference, parse_reference
+from swarmer.registries.store import docker_config
+from swarmer.updates.policy import Allow, Mode, Policy, infer_pattern, newer_tag, read_policies
+from swarmer.updates.rewrite import RewriteError, replace_image
 from tests.registry_fake import FakeRegistry, digest_of
 
 

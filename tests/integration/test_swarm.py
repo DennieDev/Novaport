@@ -16,15 +16,15 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from novaport.server.app import create_app
-from novaport.sops import Sops, generate_age_key
+from swarmer.server.app import create_app
+from swarmer.sops import Sops, generate_age_key
 from tests.conftest import SOPS_BINARY, TEST_DOCKER_HOST, client_for, make_settings
 from tests.gitrepo import Repo
 
 DOCKER_HOST = TEST_DOCKER_HOST
-AGENT_URLS = os.environ.get("NOVAPORT_TEST_AGENT_URLS")
-AGENT_TOKEN = os.environ.get("NOVAPORT_TEST_AGENT_TOKEN")
-NODE_PREFIX = os.environ.get("NOVAPORT_SWARM_NAME", "novaport-swarm")
+AGENT_URLS = os.environ.get("SWARMER_TEST_AGENT_URLS")
+AGENT_TOKEN = os.environ.get("SWARMER_TEST_AGENT_TOKEN")
+NODE_PREFIX = os.environ.get("SWARMER_SWARM_NAME", "swarmer-swarm")
 PASSWORD = "integration admin password"
 FINISHED = {"succeeded", "failed", "cancelled"}
 
@@ -67,7 +67,7 @@ def compose(command: str = "sleep 3600", replicas: int = 1, extra: str = "", top
     )
 
 
-class Novaport:
+class Swarmer:
     def __init__(self, client: httpx.AsyncClient, origin: Repo, stack: str) -> None:
         self.client = client
         self.origin = origin
@@ -185,7 +185,7 @@ def sops() -> Sops | None:
 
 
 @pytest.fixture
-async def novaport(clean_db: str, tmp_path: Path, sops: Sops | None) -> AsyncIterator[Novaport]:
+async def swarmer(clean_db: str, tmp_path: Path, sops: Sops | None) -> AsyncIterator[Swarmer]:
     stack = f"it{uuid.uuid4().hex[:8]}"
     settings = make_settings(
         database_url=SecretStr(clean_db),
@@ -205,23 +205,23 @@ async def novaport(clean_db: str, tmp_path: Path, sops: Sops | None) -> AsyncIte
                 "/api/auth/login", json={"username": "admin", "password": PASSWORD}
             )
             assert response.status_code == 204, response.text
-            yield Novaport(client, Repo(tmp_path / "origin"), stack)
+            yield Swarmer(client, Repo(tmp_path / "origin"), stack)
     finally:
         _cleanup(stack)
 
 
-async def test_deploys_and_updates_from_git(novaport: Novaport) -> None:
-    novaport.write(compose(replicas=3))
-    await novaport.add_repository()
-    await novaport.push("Add app")
+async def test_deploys_and_updates_from_git(swarmer: Swarmer) -> None:
+    swarmer.write(compose(replicas=3))
+    await swarmer.add_repository()
+    await swarmer.push("Add app")
 
-    first = await novaport.deployed()
+    first = await swarmer.deployed()
     assert first["status"] == "succeeded", first["error"]
-    svc = service(novaport.stack)
+    svc = service(swarmer.stack)
     assert svc["Spec"]["Mode"]["Replicated"]["Replicas"] == 3
     labels = svc["Spec"]["Labels"]
-    assert labels["novaport.stack"] == novaport.stack
-    assert labels["novaport.commit"] == novaport.origin.head()
+    assert labels["swarmer.stack"] == swarmer.stack
+    assert labels["swarmer.commit"] == swarmer.origin.head()
     tasks = docker(
         "service",
         "ps",
@@ -229,74 +229,74 @@ async def test_deploys_and_updates_from_git(novaport: Novaport) -> None:
         "desired-state=running",
         "--format",
         "{{.Node}}",
-        f"{novaport.stack}_app",
+        f"{swarmer.stack}_app",
     )
     assert len(set(tasks.split())) > 1, "tasks should spread over several nodes"
 
-    novaport.write(compose(replicas=2, extra="    environment:\n      MODE: prod\n"))
-    await novaport.push("Scale down")
-    second = await novaport.deployed()
+    swarmer.write(compose(replicas=2, extra="    environment:\n      MODE: prod\n"))
+    await swarmer.push("Scale down")
+    second = await swarmer.deployed()
     assert second["id"] != first["id"]
     assert second["status"] == "succeeded", second["error"]
-    svc = service(novaport.stack)
+    svc = service(swarmer.stack)
     assert svc["Spec"]["Mode"]["Replicated"]["Replicas"] == 2
     assert "MODE=prod" in svc["Spec"]["TaskTemplate"]["ContainerSpec"]["Env"]
 
-    info = await novaport.stack_info()
-    assert info["last_good_revision"]["commit"] == novaport.origin.head()
+    info = await swarmer.stack_info()
+    assert info["last_good_revision"]["commit"] == swarmer.origin.head()
 
 
-async def test_failed_rollout_keeps_desired_state_until_rollback(novaport: Novaport) -> None:
-    novaport.write(compose())
-    await novaport.add_repository()
-    await novaport.push("Add app")
-    good = await novaport.deployed()
+async def test_failed_rollout_keeps_desired_state_until_rollback(swarmer: Swarmer) -> None:
+    swarmer.write(compose())
+    await swarmer.add_repository()
+    await swarmer.push("Add app")
+    good = await swarmer.deployed()
     assert good["status"] == "succeeded", good["error"]
-    good_commit = novaport.origin.head()
+    good_commit = swarmer.origin.head()
 
-    novaport.write(compose(command="sh -c 'exit 3'"))
-    await novaport.push("Break it")
-    bad = await novaport.deployed()
+    swarmer.write(compose(command="sh -c 'exit 3'"))
+    await swarmer.push("Break it")
+    bad = await swarmer.deployed()
     assert bad["status"] == "failed"
     assert bad["stage"] == "converge"
 
-    info = await novaport.stack_info()
-    assert info["latest_revision"]["commit"] == novaport.origin.head()
+    info = await swarmer.stack_info()
+    assert info["latest_revision"]["commit"] == swarmer.origin.head()
     assert info["last_good_revision"]["commit"] == good_commit
 
-    rollback = await novaport.deploy(info["last_good_revision"]["id"])
+    rollback = await swarmer.deploy(info["last_good_revision"]["id"])
     assert rollback["status"] == "succeeded", rollback["error"]
-    args = service(novaport.stack)["Spec"]["TaskTemplate"]["ContainerSpec"]["Args"]
+    args = service(swarmer.stack)["Spec"]["TaskTemplate"]["ContainerSpec"]["Args"]
     assert args == ["sleep", "3600"]
 
 
-async def test_preflight_refuses_missing_external_network(novaport: Novaport) -> None:
-    novaport.write(
+async def test_preflight_refuses_missing_external_network(swarmer: Swarmer) -> None:
+    swarmer.write(
         compose(
             extra="    networks: [shared]\n",
             top="networks:\n  shared:\n    external: true\n    name: does-not-exist\n",
         )
     )
-    await novaport.add_repository()
-    await novaport.push("Add app")
-    d = await novaport.deployed()
+    await swarmer.add_repository()
+    await swarmer.push("Add app")
+    d = await swarmer.deployed()
     assert d["status"] == "failed"
     assert d["stage"] == "preflight"
     assert "does-not-exist" in d["error"]
-    assert docker("service", "ls", "--quiet", "--filter", f"name={novaport.stack}_") == ""
+    assert docker("service", "ls", "--quiet", "--filter", f"name={swarmer.stack}_") == ""
 
 
 async def test_preflight_refuses_a_port_another_stack_publishes(
-    novaport: Novaport, tmp_path: Path
+    swarmer: Swarmer, tmp_path: Path
 ) -> None:
-    other = f"{novaport.stack}x"
+    other = f"{swarmer.stack}x"
     (tmp_path / "other.yaml").write_text(compose(extra='    ports: ["28431:80"]\n'))
     docker("stack", "deploy", "--detach=true", "-c", str(tmp_path / "other.yaml"), other)
     try:
-        novaport.write(compose(extra='    ports: ["28431:80"]\n'))
-        await novaport.add_repository()
-        await novaport.push("Add app")
-        d = await novaport.deployed()
+        swarmer.write(compose(extra='    ports: ["28431:80"]\n'))
+        await swarmer.add_repository()
+        await swarmer.push("Add app")
+        d = await swarmer.deployed()
         assert d["status"] == "failed"
         assert d["stage"] == "preflight"
         assert d["error"] == f"Port 28431/tcp is already published by {other}_app."
@@ -305,10 +305,10 @@ async def test_preflight_refuses_a_port_another_stack_publishes(
 
 
 @needs_agents
-async def test_preflight_checks_bind_mounts_on_every_node(novaport: Novaport) -> None:
-    path = f"/srv/{novaport.stack}"
+async def test_preflight_checks_bind_mounts_on_every_node(swarmer: Swarmer) -> None:
+    path = f"/srv/{swarmer.stack}"
     on_node("manager", "mkdir", "-p", path)
-    novaport.write(
+    swarmer.write(
         compose(
             replicas=3,
             extra=(
@@ -316,9 +316,9 @@ async def test_preflight_checks_bind_mounts_on_every_node(novaport: Novaport) ->
             ),
         )
     )
-    await novaport.add_repository()
-    await novaport.push("Add app")
-    d = await novaport.deployed()
+    await swarmer.add_repository()
+    await swarmer.push("Add app")
+    d = await swarmer.deployed()
     assert d["status"] == "failed"
     assert d["stage"] == "preflight"
     assert "worker1" in d["error"]
@@ -327,29 +327,29 @@ async def test_preflight_checks_bind_mounts_on_every_node(novaport: Novaport) ->
 
     for node in ("worker1", "worker2"):
         on_node(node, "mkdir", "-p", path)
-    retry = await novaport.deploy()
+    retry = await swarmer.deploy()
     assert retry["status"] == "succeeded", retry["error"]
 
 
-async def test_manual_changes_show_up_as_drift(novaport: Novaport) -> None:
-    novaport.write(compose())
-    await novaport.add_repository()
-    await novaport.push("Add app")
-    assert (await novaport.deployed())["status"] == "succeeded"
-    assert (await novaport.stack_info())["drift"] == []
+async def test_manual_changes_show_up_as_drift(swarmer: Swarmer) -> None:
+    swarmer.write(compose())
+    await swarmer.add_repository()
+    await swarmer.push("Add app")
+    assert (await swarmer.deployed())["status"] == "succeeded"
+    assert (await swarmer.stack_info())["drift"] == []
 
-    docker("service", "scale", "--detach", f"{novaport.stack}_app=2")
-    drifted = await novaport.until(lambda s: bool(s["drift"]))
+    docker("service", "scale", "--detach", f"{swarmer.stack}_app=2")
+    drifted = await swarmer.until(lambda s: bool(s["drift"]))
     assert any("app" in line for line in drifted["drift"])
 
-    assert (await novaport.deploy())["status"] == "succeeded"
-    await novaport.until(lambda s: s["drift"] == [])
-    assert service(novaport.stack)["Spec"]["Mode"]["Replicated"]["Replicas"] == 1
+    assert (await swarmer.deploy())["status"] == "succeeded"
+    await swarmer.until(lambda s: s["drift"] == [])
+    assert service(swarmer.stack)["Spec"]["Mode"]["Replicated"]["Replicas"] == 1
 
 
 @pytest.mark.sops
 async def test_secrets_are_rotated_with_a_rolling_update(
-    novaport: Novaport, sops: Sops | None
+    swarmer: Swarmer, sops: Sops | None
 ) -> None:
     assert sops is not None
     recipients = [str(sops.recipient)]
@@ -357,42 +357,42 @@ async def test_secrets_are_rotated_with_a_rolling_update(
         extra="    secrets: [token]\n",
         top="secrets:\n  token:\n    environment: TOKEN\n",
     )
-    novaport.write(secret_compose)
-    novaport.write((await sops.encrypt({"TOKEN": "one"}, recipients)).decode(), "secrets.env")
-    await novaport.add_repository()
-    await novaport.push("Add app")
-    assert (await novaport.deployed())["status"] == "succeeded"
+    swarmer.write(secret_compose)
+    swarmer.write((await sops.encrypt({"TOKEN": "one"}, recipients)).decode(), "secrets.env")
+    await swarmer.add_repository()
+    await swarmer.push("Add app")
+    assert (await swarmer.deployed())["status"] == "succeeded"
     [first] = docker(
-        "secret", "ls", "--format", "{{.Name}}", "--filter", f"name={novaport.stack}_token_"
+        "secret", "ls", "--format", "{{.Name}}", "--filter", f"name={swarmer.stack}_token_"
     ).split()
 
-    novaport.write((await sops.encrypt({"TOKEN": "two"}, recipients)).decode(), "secrets.env")
-    await novaport.push("Rotate")
-    d = await novaport.deployed()
+    swarmer.write((await sops.encrypt({"TOKEN": "two"}, recipients)).decode(), "secrets.env")
+    await swarmer.push("Rotate")
+    d = await swarmer.deployed()
     assert d["status"] == "succeeded", d["error"]
     [second] = docker(
-        "secret", "ls", "--format", "{{.Name}}", "--filter", f"name={novaport.stack}_token_"
+        "secret", "ls", "--format", "{{.Name}}", "--filter", f"name={swarmer.stack}_token_"
     ).split()
     assert second != first
-    mounted = service(novaport.stack)["Spec"]["TaskTemplate"]["ContainerSpec"]["Secrets"]
+    mounted = service(swarmer.stack)["Spec"]["TaskTemplate"]["ContainerSpec"]["Secrets"]
     assert [s["SecretName"] for s in mounted] == [second]
 
 
-async def test_compose_stack_runs_on_the_host(novaport: Novaport) -> None:
-    novaport.write("type: compose\n", "novaport.yaml")
-    novaport.write("services:\n  app:\n    image: busybox:1.37\n    command: sleep 3600\n")
-    await novaport.add_repository()
-    await novaport.push("Add app")
-    d = await novaport.deployed()
+async def test_compose_stack_runs_on_the_host(swarmer: Swarmer) -> None:
+    swarmer.write("type: compose\n", "swarmer.yaml")
+    swarmer.write("services:\n  app:\n    image: busybox:1.37\n    command: sleep 3600\n")
+    await swarmer.add_repository()
+    await swarmer.push("Add app")
+    d = await swarmer.deployed()
     assert d["status"] == "succeeded", d["error"]
     running = docker(
         "ps",
         "--format",
         "{{.Names}}",
         "--filter",
-        f"label=com.docker.compose.project={novaport.stack}",
+        f"label=com.docker.compose.project={swarmer.stack}",
     )
-    assert running.split() == [f"{novaport.stack}-app-1"]
+    assert running.split() == [f"{swarmer.stack}-app-1"]
 
 
 LEGACY = """services:
@@ -429,9 +429,9 @@ volumes:
 
 
 async def test_adopted_stack_deploys_without_restarting_tasks(
-    novaport: Novaport, tmp_path: Path
+    swarmer: Swarmer, tmp_path: Path
 ) -> None:
-    legacy = f"{novaport.stack}legacy"
+    legacy = f"{swarmer.stack}legacy"
     (tmp_path / "legacy.yaml").write_text(LEGACY)
     docker("stack", "deploy", "--detach=false", "-c", str(tmp_path / "legacy.yaml"), legacy)
     try:
@@ -440,10 +440,10 @@ async def test_adopted_stack_deploys_without_restarting_tasks(
         )
         assert len(before) == 5
 
-        novaport.write(compose())
-        await novaport.add_repository(mode="manual")
-        await novaport.push("Add app")
-        found = (await novaport.client.get("/api/unmanaged")).json()
+        swarmer.write(compose())
+        await swarmer.add_repository(mode="manual")
+        await swarmer.push("Add app")
+        found = (await swarmer.client.get("/api/unmanaged")).json()
         assert {
             "name": legacy,
             "type": "swarm",
@@ -452,17 +452,17 @@ async def test_adopted_stack_deploys_without_restarting_tasks(
             "name_taken": False,
         } in found
 
-        generated = (await novaport.client.get(f"/api/unmanaged/swarm/{legacy}")).json()
-        response = await novaport.client.post(
+        generated = (await swarmer.client.get(f"/api/unmanaged/swarm/{legacy}")).json()
+        response = await swarmer.client.post(
             f"/api/unmanaged/swarm/{legacy}/adopt",
-            json={"repository_id": novaport.repo_id, "compose": generated["compose"]},
+            json={"repository_id": swarmer.repo_id, "compose": generated["compose"]},
         )
         assert response.status_code == 200, response.text
 
-        adopted = Novaport(novaport.client, novaport.origin, legacy)
+        adopted = Swarmer(swarmer.client, swarmer.origin, legacy)
         d = await adopted.deploy()
         assert d["status"] == "succeeded", d["error"]
-        assert service(legacy, "api")["Spec"]["Labels"]["novaport.stack"] == legacy
+        assert service(legacy, "api")["Spec"]["Labels"]["swarmer.stack"] == legacy
         after = set(
             docker("stack", "ps", "--quiet", "--filter", "desired-state=running", legacy).split()
         )
@@ -472,25 +472,25 @@ async def test_adopted_stack_deploys_without_restarting_tasks(
 
 
 @needs_agents
-async def test_stack_page_shows_containers_with_logs(novaport: Novaport) -> None:
-    novaport.write(compose(command="sh -c 'echo hello from the app; sleep 3600'", replicas=2))
-    await novaport.add_repository()
-    await novaport.push("Add app")
-    assert (await novaport.deployed())["status"] == "succeeded"
+async def test_stack_page_shows_containers_with_logs(swarmer: Swarmer) -> None:
+    swarmer.write(compose(command="sh -c 'echo hello from the app; sleep 3600'", replicas=2))
+    await swarmer.add_repository()
+    await swarmer.push("Add app")
+    assert (await swarmer.deployed())["status"] == "succeeded"
 
-    info = await novaport.stack_info()
-    data = (await novaport.client.get(f"/api/stacks/{info['id']}/containers")).json()
+    info = await swarmer.stack_info()
+    data = (await swarmer.client.get(f"/api/stacks/{info['id']}/containers")).json()
     [app] = data["services"]
     running = [c for c in app["containers"] if c["state"] == "running"]
     assert len(running) == 2
-    assert {c["name"] for c in running} == {f"{novaport.stack}_app.1", f"{novaport.stack}_app.2"}
+    assert {c["name"] for c in running} == {f"{swarmer.stack}_app.1", f"{swarmer.stack}_app.2"}
 
     for c in running:
-        logs = await novaport.client.get(f"/api/stacks/{info['id']}/containers/{c['ref']}/logs")
+        logs = await swarmer.client.get(f"/api/stacks/{info['id']}/containers/{c['ref']}/logs")
         assert logs.status_code == 200, logs.text
         assert any("hello from the app" in line for line in logs.json()["lines"])
     detail = (
-        await novaport.client.get(f"/api/stacks/{info['id']}/containers/{running[0]['ref']}")
+        await swarmer.client.get(f"/api/stacks/{info['id']}/containers/{running[0]['ref']}")
     ).json()
     assert detail["service"] == "app"
     assert detail["node"] in {"manager", "worker1", "worker2"}

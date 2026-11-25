@@ -10,9 +10,9 @@ from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from novaport.auth.access import Access
-from novaport.auth.passwords import hash_password
-from novaport.models import (
+from swarmer.auth.access import Access
+from swarmer.auth.passwords import hash_password
+from swarmer.models import (
     AuditEntry,
     Group,
     GroupMember,
@@ -23,7 +23,7 @@ from novaport.models import (
     Stack,
     User,
 )
-from novaport.server.app import create_app
+from swarmer.server.app import create_app
 from tests.conftest import client_for, make_settings
 from tests.fakes import FakeReader
 from tests.test_pipeline import FakeCli

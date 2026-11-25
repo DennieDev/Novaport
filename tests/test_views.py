@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import aiodocker
 
-from novaport.docker import views
-from novaport.docker.client import DockerUnavailable, NotFound, _translate
+from swarmer.docker import views
+from swarmer.docker.client import DockerUnavailable, NotFound, _translate
 from tests.fakes import (
     INFO,
     NETWORKS,

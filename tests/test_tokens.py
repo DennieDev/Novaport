@@ -8,9 +8,9 @@ from pydantic import SecretStr
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from novaport.auth.passwords import hash_password
-from novaport.models import ApiToken, AuditEntry, User
-from novaport.server.app import create_app
+from swarmer.auth.passwords import hash_password
+from swarmer.models import ApiToken, AuditEntry, User
+from swarmer.server.app import create_app
 from tests.conftest import client_for, make_settings
 
 pytestmark = pytest.mark.postgres
@@ -48,7 +48,7 @@ async def create(app: httpx.AsyncClient, name: str, role: str = "viewer", **body
 
 async def test_token_acts_as_its_user_with_capped_role(app: httpx.AsyncClient) -> None:
     value = await create(app, "reader")
-    assert value.startswith("np_")
+    assert value.startswith("sw_")
 
     listed = (await app.get("/api/tokens")).json()
     assert [t["name"] for t in listed] == ["reader"]
@@ -82,7 +82,7 @@ async def test_token_cannot_create_tokens_or_change_the_password(app: httpx.Asyn
 
 
 async def test_bad_token_never_falls_back_to_the_cookie(app: httpx.AsyncClient) -> None:
-    for header in ("Bearer np_wrong", "Bearer ", "Basic abc"):
+    for header in ("Bearer sw_wrong", "Bearer ", "Basic abc"):
         response = await app.get("/api/auth/me", headers={"Authorization": header})
         assert response.status_code == 401, header
     assert (await app.get("/api/auth/me")).status_code == 200

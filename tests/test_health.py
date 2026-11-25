@@ -3,8 +3,8 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from novaport import __version__
-from novaport.server.app import create_app
+from swarmer import __version__
+from swarmer.server.app import create_app
 from tests.conftest import UNREACHABLE_DATABASE_URL, client_for, make_settings
 
 
@@ -32,4 +32,4 @@ async def test_readyz_with_database(client: httpx.AsyncClient) -> None:
 async def test_openapi_is_under_api(client: httpx.AsyncClient) -> None:
     response = await client.get("/api/openapi.json")
     assert response.status_code == 200
-    assert response.json()["info"]["title"] == "Novaport"
+    assert response.json()["info"]["title"] == "Swarmer"

@@ -10,7 +10,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from novaport.server.app import create_app
+from swarmer.server.app import create_app
 from tests.conftest import client_for, make_settings
 from tests.fakes import FakeReader
 from tests.gitrepo import COMPOSE, Repo
@@ -25,7 +25,7 @@ PASSWORD = "correct horse battery"
 def origin(tmp_path: Path) -> Repo:
     repo = Repo(tmp_path / "origin")
     repo.write("stacks/web/compose.yaml", COMPOSE)
-    repo.write("stacks/web/novaport.yaml", "deploy: approve\n")
+    repo.write("stacks/web/swarmer.yaml", "deploy: approve\n")
     repo.commit("Add web")
     return repo
 
@@ -170,7 +170,7 @@ async def test_viewing_requires_login(clean_db: str) -> None:
 
 
 async def test_edit_files_through_the_api(api: httpx.AsyncClient, origin: Repo) -> None:
-    origin.write("stacks/web/novaport.yaml", "deploy: manual\n")
+    origin.write("stacks/web/swarmer.yaml", "deploy: manual\n")
     origin.commit("Manual")
     repo = await create_repo(api, origin)
     await api.post(f"/api/repositories/{repo['id']}/sync")
@@ -178,7 +178,7 @@ async def test_edit_files_through_the_api(api: httpx.AsyncClient, origin: Repo) 
     assert stack["edit_mode"] == "commit"
 
     files = (await api.get(f"/api/stacks/{stack['id']}/files")).json()
-    assert [f["path"] for f in files["files"]] == ["compose.yaml", "novaport.yaml"]
+    assert [f["path"] for f in files["files"]] == ["compose.yaml", "swarmer.yaml"]
     assert files["has_secrets"] is False
     base = files["commit"]
 
@@ -214,7 +214,7 @@ async def test_sops_info_without_key(api: httpx.AsyncClient) -> None:
 
 
 async def test_save_and_deploy_with_options(api: httpx.AsyncClient, origin: Repo) -> None:
-    origin.write("stacks/web/novaport.yaml", "deploy: manual\n")
+    origin.write("stacks/web/swarmer.yaml", "deploy: manual\n")
     origin.commit("Manual")
     repo = await create_repo(api, origin)
     await api.post(f"/api/repositories/{repo['id']}/sync")

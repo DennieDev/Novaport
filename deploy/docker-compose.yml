@@ -1,10 +1,10 @@
-# Novaport on Docker Swarm, behind Traefik.
+# Swarmer on Docker Swarm, behind Traefik.
 #
 # Copy .env.example to .env next to this file and fill it in, create the data directories, then
 # deploy from this directory:
 #
-#   mkdir -p /data/novaport/data /data/novaport/postgres
-#   NOVAPORT_IMAGE=ghcr.io/denniedev/novaport:0.1.0 docker stack deploy -c docker-compose.yml novaport
+#   mkdir -p /data/swarmer/data /data/swarmer/postgres
+#   SWARMER_IMAGE=ghcr.io/dennielabs/swarmer:0.1.0 docker stack deploy -c docker-compose.yml swarmer
 #
 # Traefik needs the swarm provider (v3) and an attachable overlay network named traefik:
 #
@@ -13,7 +13,7 @@
 services:
 
   server:
-    image: ${NOVAPORT_IMAGE:-ghcr.io/denniedev/novaport:latest}
+    image: ${SWARMER_IMAGE:-ghcr.io/dennielabs/swarmer:latest}
     command: server
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/healthz')"]
@@ -26,26 +26,26 @@ services:
         constraints: [node.role == manager]
       update_config:
         # The old server keeps running until the new one is healthy, so a deploy of this
-        # stack started from Novaport itself completes. See docs/operations.md.
+        # stack started from Swarmer itself completes. See docs/operations.md.
         order: start-first
       labels:
         - traefik.enable=true
         - traefik.swarm.network=traefik
-        - traefik.http.routers.novaport.rule=Host(`novaport.example.com`)
-        - traefik.http.routers.novaport.entrypoints=websecure
-        - traefik.http.routers.novaport.tls=true
-        - traefik.http.services.novaport.loadbalancer.server.port=8000
+        - traefik.http.routers.swarmer.rule=Host(`swarmer.example.com`)
+        - traefik.http.routers.swarmer.entrypoints=websecure
+        - traefik.http.routers.swarmer.tls=true
+        - traefik.http.services.swarmer.loadbalancer.server.port=8000
     env_file: .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /data/novaport/data:/var/lib/novaport
+      - /data/swarmer/data:/var/lib/swarmer
     networks:
       - default
       - agents
       - traefik
 
   agent:
-    image: ${NOVAPORT_IMAGE:-ghcr.io/denniedev/novaport:latest}
+    image: ${SWARMER_IMAGE:-ghcr.io/dennielabs/swarmer:latest}
     command: agent
     deploy:
       mode: global
@@ -64,10 +64,10 @@ services:
         constraints: [node.role == manager]
     env_file: .env
     environment:
-      POSTGRES_USER: novaport
-      POSTGRES_DB: novaport
+      POSTGRES_USER: swarmer
+      POSTGRES_DB: swarmer
     volumes:
-      - /data/novaport/postgres:/var/lib/postgresql
+      - /data/swarmer/postgres:/var/lib/postgresql
     networks:
       - default
 

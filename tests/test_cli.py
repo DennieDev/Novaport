@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import pytest
 
-from novaport import __version__
-from novaport.cli import main
+from swarmer import __version__
+from swarmer.cli import main
 
 
 def test_version(capsys: pytest.CaptureFixture[str]) -> None:

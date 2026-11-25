@@ -13,7 +13,7 @@ import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 ISSUER = "https://idp.example.com"
-CLIENT_ID = "novaport"
+CLIENT_ID = "swarmer"
 CLIENT_SECRET = "s3cret"
 
 

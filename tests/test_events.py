@@ -13,11 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from novaport.auth.access import Access
-from novaport.auth.passwords import hash_password
-from novaport.events import RESYNC, Change, EventHub, install, parse, payloads
-from novaport.migrate import upgrade
-from novaport.models import (
+from swarmer.auth.access import Access
+from swarmer.auth.passwords import hash_password
+from swarmer.events import RESYNC, Change, EventHub, install, parse, payloads
+from swarmer.migrate import upgrade
+from swarmer.models import (
     Deployment,
     DeploymentEvent,
     DeploymentStatus,
@@ -28,8 +28,8 @@ from novaport.models import (
     Stack,
     User,
 )
-from novaport.server.api.live import visible
-from novaport.server.app import create_app
+from swarmer.server.api.live import visible
+from swarmer.server.app import create_app
 from tests.conftest import TEST_DATABASE_URL, make_settings
 from tests.fakes import FakeReader
 

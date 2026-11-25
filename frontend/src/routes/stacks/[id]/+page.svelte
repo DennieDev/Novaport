@@ -210,7 +210,7 @@
 	{/if}
 	{#if s.config_error}
 		<pre class="panel error">{s.config_error}</pre>
-		<p class="muted">New revisions are ignored until novaport.yaml is fixed.</p>
+		<p class="muted">New revisions are ignored until swarmer.yaml is fixed.</p>
 	{/if}
 
 	<div class="panel strip">
@@ -218,7 +218,7 @@
 			<span class="label">Running</span>
 			{#if s.last_good_revision}
 				<code>{s.last_good_revision.commit.slice(0, 10)}</code> {s.last_good_revision.message}
-			{:else}<span class="muted">never deployed by Novaport</span>{/if}
+			{:else}<span class="muted">never deployed by Swarmer</span>{/if}
 		</div>
 		{#if s.latest_revision && s.latest_revision.id !== s.last_good_revision?.id}
 			<div>
@@ -253,7 +253,7 @@
 			<strong>Drifted from the last deploy</strong>
 			<span class="muted">
 				· checked {ago(s.drift_checked_at)}. Someone changed the running services outside
-				Novaport. Deploying again restores what git says.
+				Swarmer. Deploying again restores what git says.
 			</span>
 			<ul>
 				{#each s.drift as line (line)}<li><code>{line}</code></li>{/each}
@@ -311,7 +311,7 @@
 		{:else}
 			<p class="muted">
 				No service has an <code>x-updates</code> policy. Add one to a service in the compose file
-				to have Novaport look for newer images.
+				to have Swarmer look for newer images.
 			</p>
 		{/if}
 		{#if can('operator', s.id) && !s.removed_at}

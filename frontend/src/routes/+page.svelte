@@ -215,7 +215,7 @@
 					{#if s.swarm.is_manager}
 						manager · {s.swarm.nodes} nodes, {s.swarm.managers} managers
 					{:else if s.swarm.state === 'active'}
-						worker; connect Novaport to a manager to see the cluster
+						worker; connect Swarmer to a manager to see the cluster
 					{/if}
 					{#if s.swarm.error}<span class="error">{s.swarm.error}</span>{/if}
 				</dd>

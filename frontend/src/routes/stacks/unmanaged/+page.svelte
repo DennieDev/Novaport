@@ -72,10 +72,10 @@
 </script>
 
 <p class="crumbs"><a href="/stacks">← Stacks</a></p>
-<h1>Deployed without Novaport</h1>
+<h1>Deployed without Swarmer</h1>
 <p class="muted">
 	These Swarm stacks and Compose projects run on your hosts, but no repository describes them.
-	Novaport can write a compose file from what is running and commit it, after which the stack
+	Swarmer can write a compose file from what is running and commit it, after which the stack
 	is managed like any other.
 </p>
 
@@ -88,7 +88,7 @@
 					{saved.result.pull_request_url}
 				</a>
 			</p>
-			<p class="muted">The stack appears in Novaport once it's merged.</p>
+			<p class="muted">The stack appears in Swarmer once it's merged.</p>
 		{:else}
 			<p>
 				Committed <code>{saved.result.commit.slice(0, 10)}</code> to <code>{saved.result.branch}</code>.
@@ -123,7 +123,7 @@
 					</td>
 				</tr>
 			{:else}
-				<tr><td colspan="5" class="muted">Everything running here is managed by Novaport.</td></tr>
+				<tr><td colspan="5" class="muted">Everything running here is managed by Swarmer.</td></tr>
 			{/each}
 		</tbody>
 	</table>
@@ -171,7 +171,7 @@
 			</p>
 			{#if generated.own && deploy === 'auto'}
 				<p class="warn">
-					Every change to this stack would restart Novaport, and a change that keeps it from
+					Every change to this stack would restart Swarmer, and a change that keeps it from
 					starting can only be fixed by hand.
 				</p>
 			{/if}

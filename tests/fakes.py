@@ -3,8 +3,8 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
-from novaport.agents.pool import Agent, AgentUnavailable
-from novaport.docker.client import NotFound
+from swarmer.agents.pool import Agent, AgentUnavailable
+from swarmer.docker.client import NotFound
 
 Obj = Mapping[str, Any]
 
@@ -67,7 +67,7 @@ SERVICE_AGENT: Obj = {
     "UpdatedAt": "2026-11-20T10:00:00Z",
     "Spec": {
         "Name": "agent",
-        "TaskTemplate": {"ContainerSpec": {"Image": "novaport:dev", "TTY": True}},
+        "TaskTemplate": {"ContainerSpec": {"Image": "swarmer:dev", "TTY": True}},
         "Mode": {"Global": {}},
     },
 }

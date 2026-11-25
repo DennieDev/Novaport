@@ -10,14 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
 
-from novaport.crypto import Cipher
-from novaport.git import GitMirror, PushRejected
-from novaport.models import Deployment, DeployMode, Repository, Revision, Stack, User
-from novaport.process import Result
-from novaport.sops import Sops, generate_age_key
-from novaport.stacks import editing
-from novaport.stacks.editing import EditConflict, EditError, StackEditor, check_path
-from novaport.stacks.sync import Syncer
+from swarmer.crypto import Cipher
+from swarmer.git import GitMirror, PushRejected
+from swarmer.models import Deployment, DeployMode, Repository, Revision, Stack, User
+from swarmer.process import Result
+from swarmer.sops import Sops, generate_age_key
+from swarmer.stacks import editing
+from swarmer.stacks.editing import EditConflict, EditError, StackEditor, check_path
+from swarmer.stacks.sync import Syncer
 from tests.conftest import SOPS_BINARY, TEST_SECRET_KEY, make_settings
 from tests.gitrepo import COMPOSE, Repo
 from tests.test_pipeline import FakeCli
@@ -34,7 +34,7 @@ class Env:
         self.maker = async_sessionmaker(self.engine, expire_on_commit=False)
         self.age_key = generate_age_key()
         self.settings = make_settings(
-            database_url=SecretStr(url), commit_name="Novaport", commit_email="np@example.com"
+            database_url=SecretStr(url), commit_name="Swarmer", commit_email="np@example.com"
         )
         cipher = Cipher(TEST_SECRET_KEY)
         self.syncer = Syncer(self.settings, self.engine, self.maker, cipher)
@@ -75,7 +75,7 @@ class Env:
 async def env(clean_db: str, tmp_path: Path) -> AsyncIterator[Env]:
     origin = Repo(tmp_path / "origin")
     origin.write("stacks/web/compose.yaml", COMPOSE)
-    origin.write("stacks/web/novaport.yaml", "deploy: auto\n")
+    origin.write("stacks/web/swarmer.yaml", "deploy: auto\n")
     origin.write("stacks/web/conf/nginx.conf", "server {}\n")
     origin.write("stacks/api/compose.yaml", COMPOSE)
     origin.commit("Initial")
@@ -88,7 +88,7 @@ async def test_files_lists_the_stack_folder(env: Env) -> None:
     await env.setup()
     files = await env.editor.files(await env.stack())
     assert files.commit == env.origin.head()
-    assert [f.path for f in files.files] == ["compose.yaml", "conf/nginx.conf", "novaport.yaml"]
+    assert [f.path for f in files.files] == ["compose.yaml", "conf/nginx.conf", "swarmer.yaml"]
     assert files.files[0].content == COMPOSE
 
 
@@ -103,7 +103,7 @@ async def test_save_commits_pushes_and_deploys(env: Env) -> None:
     assert env.origin.head() == result.commit
     assert env.origin.show("stacks/web/compose.yaml") == new
     assert env.origin.log("%an <%ae>|%cn <%ce>|%s") == (
-        "dana <dana@example.com>|Novaport <np@example.com>|Pin nginx"
+        "dana <dana@example.com>|Swarmer <np@example.com>|Pin nginx"
     )
     assert env.cli.calls == ["config swarm web compose.yaml"]
     assert result.sync is not None
@@ -125,7 +125,7 @@ async def test_add_and_delete_files(env: Env) -> None:
         "Swap config",
     )
     files = env.origin.git("ls-tree", "-r", "--name-only", "HEAD", "stacks/web").split()
-    assert files == ["stacks/web/.env", "stacks/web/compose.yaml", "stacks/web/novaport.yaml"]
+    assert files == ["stacks/web/.env", "stacks/web/compose.yaml", "stacks/web/swarmer.yaml"]
 
 
 async def test_changes_elsewhere_in_the_repo_are_not_conflicts(env: Env) -> None:
@@ -210,7 +210,7 @@ async def test_push_race_is_retried_on_top_of_the_new_commit(
 
 
 async def test_pull_request_mode(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
-    env.origin.write("stacks/web/novaport.yaml", "deploy: auto\nedits: pr\n")
+    env.origin.write("stacks/web/swarmer.yaml", "deploy: auto\nedits: pr\n")
     env.origin.commit("Use PRs")
     await env.setup(forge="github", forge_token=Cipher(TEST_SECRET_KEY).encrypt("ghp_x"))
     opened: dict[str, Any] = {}
@@ -234,7 +234,7 @@ async def test_pull_request_mode(env: Env, monkeypatch: pytest.MonkeyPatch) -> N
 
 
 async def test_pull_request_mode_needs_a_token(env: Env) -> None:
-    env.origin.write("stacks/web/novaport.yaml", "edits: pr\n")
+    env.origin.write("stacks/web/swarmer.yaml", "edits: pr\n")
     env.origin.commit("Use PRs")
     await env.setup(forge="github")
     with pytest.raises(EditError, match="forge token"):
@@ -294,4 +294,4 @@ async def test_validation_rewrites_environment_secrets(env: Env) -> None:
         await env.stack(), USER, env.origin.head(), {"compose.yaml": compose}, "x"
     )
     # `docker stack config` rejects `environment:` secrets, so validation sees the rewrite.
-    assert env.cli.calls == ["config swarm web .novaport-source.yaml"]
+    assert env.cli.calls == ["config swarm web .swarmer-source.yaml"]

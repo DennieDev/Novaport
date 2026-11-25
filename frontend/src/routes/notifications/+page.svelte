@@ -133,7 +133,7 @@
 <h1>Notifications</h1>
 <p class="muted">
 	Send events to a webhook, a Slack incoming webhook, or email (set the
-	<code>NOVAPORT_SMTP_*</code> variables first). Each channel picks the events it wants, for all
+	<code>SWARMER_SMTP_*</code> variables first). Each channel picks the events it wants, for all
 	stacks or for one.
 </p>
 
@@ -233,7 +233,7 @@
 			<p class="muted small">
 				Webhooks get a JSON body with <code>event</code>, <code>title</code>, <code>text</code>,
 				<code>stack</code>, <code>link</code>, and <code>data</code>. With a signing secret, the
-				<code>X-Novaport-Signature</code> header carries <code>sha256=</code> and the HMAC of the body.
+				<code>X-Swarmer-Signature</code> header carries <code>sha256=</code> and the HMAC of the body.
 			</p>
 		{/if}
 

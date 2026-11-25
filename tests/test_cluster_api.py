@@ -4,8 +4,8 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 
-from novaport.docker.client import DockerUnavailable, NotSwarmManager
-from novaport.server.app import create_app
+from swarmer.docker.client import DockerUnavailable, NotSwarmManager
+from swarmer.server.app import create_app
 from tests.conftest import as_admin, client_for, make_settings
 from tests.fakes import FakeReader
 

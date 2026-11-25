@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from novaport.migrate import upgrade
-from novaport.server.app import create_app
+from swarmer.migrate import upgrade
+from swarmer.server.app import create_app
 from tests.conftest import TEST_DATABASE_URL, make_settings
 from tests.fakes import FakeReader
 

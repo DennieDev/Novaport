@@ -51,7 +51,7 @@
 		<div class="brand">
 			<img src={logo} alt="" width="36" height="36" />
 			<div>
-				<h1>Novaport</h1>
+				<h1>Swarmer</h1>
 				<p class="muted">Sign in to manage your stacks</p>
 			</div>
 		</div>

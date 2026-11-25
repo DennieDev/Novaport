@@ -124,7 +124,7 @@
 <div class="bar">
 	<span class="muted">
 		{data.services.length} service{data.services.length === 1 ? '' : 's'}
-		{#if !data.agents}· logs and consoles need the Novaport agent on this stack's hosts{/if}
+		{#if !data.agents}· logs and consoles need the Swarmer agent on this stack's hosts{/if}
 	</span>
 	<span class="controls">
 		{#if data.services.length > 1}

@@ -9,11 +9,11 @@ from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from novaport.auth.passwords import hash_password
-from novaport.cli import main
-from novaport.config import get_settings
-from novaport.models import AuditEntry, User
-from novaport.server.app import create_app
+from swarmer.auth.passwords import hash_password
+from swarmer.cli import main
+from swarmer.config import get_settings
+from swarmer.models import AuditEntry, User
+from swarmer.server.app import create_app
 from tests.conftest import client_for, make_settings
 
 pytestmark = pytest.mark.postgres
@@ -99,7 +99,7 @@ def test_cli_sets_a_password(clean_db: str, monkeypatch: pytest.MonkeyPatch) -> 
         await engine.dispose()
 
     asyncio.run(add_user())
-    monkeypatch.setenv("NOVAPORT_DATABASE_URL", clean_db)
+    monkeypatch.setenv("SWARMER_DATABASE_URL", clean_db)
     get_settings.cache_clear()
     try:
         monkeypatch.setattr("sys.stdin", io.StringIO(NEW + "\n"))

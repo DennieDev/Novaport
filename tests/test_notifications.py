@@ -15,8 +15,8 @@ from fastapi import FastAPI
 from pydantic import SecretStr
 from sqlalchemy import select
 
-from novaport.deploy.drift import snapshot
-from novaport.models import (
+from swarmer.deploy.drift import snapshot
+from swarmer.models import (
     Deployment,
     DeploymentStatus,
     EventType,
@@ -24,17 +24,17 @@ from novaport.models import (
     Revision,
     Stack,
 )
-from novaport.monitor import Monitor, update_event
-from novaport.notifications import Event, Notifier
-from novaport.server.app import create_app
-from novaport.updates.checker import UpdateEvent
+from swarmer.monitor import Monitor, update_event
+from swarmer.notifications import Event, Notifier
+from swarmer.server.app import create_app
+from swarmer.updates.checker import UpdateEvent
 from tests.conftest import client_for, make_settings
 from tests.fakes import FakeAgents, FakeReader
 
 pytestmark = pytest.mark.postgres
 
 PASSWORD = "correct horse battery"
-HOOK = "https://hooks.example.com/novaport"
+HOOK = "https://hooks.example.com/swarmer"
 SLACK = "https://hooks.slack.com/services/T0/B0/xyz"
 
 
@@ -90,7 +90,7 @@ async def env(clean_db: str) -> AsyncIterator[Env]:
     settings = make_settings(
         database_url=SecretStr(clean_db),
         initial_admin_password=SecretStr(PASSWORD),
-        public_url="https://novaport.example.com",
+        public_url="https://swarmer.example.com",
     )
     app = create_app(settings, reader=reader, http_transport=endpoints.transport())
     async for api in client_for(app):
@@ -122,11 +122,11 @@ async def test_webhook_is_signed(env: Env) -> None:
 
     [request] = env.endpoints.received
     expected = "sha256=" + hmac.new(b"s3cret", request.content, hashlib.sha256).hexdigest()
-    assert request.headers["x-novaport-signature"] == expected
-    assert request.headers["x-novaport-event"] == "deploy.failed"
+    assert request.headers["x-swarmer-signature"] == expected
+    assert request.headers["x-swarmer-event"] == "deploy.failed"
     body = json.loads(request.content)
     assert body["title"] == "Deploying shop failed"
-    assert body["link"] == "https://novaport.example.com/deployments/1"
+    assert body["link"] == "https://swarmer.example.com/deployments/1"
 
 
 async def test_subscriptions_filter_by_event_and_stack(env: Env) -> None:
@@ -143,7 +143,7 @@ async def test_subscriptions_filter_by_event_and_stack(env: Env) -> None:
     await env.notifier.drain()
 
     [body] = env.endpoints.bodies(SLACK)
-    assert body["text"].startswith("*<https://novaport.example.com/deployments/1|Deploying")
+    assert body["text"].startswith("*<https://swarmer.example.com/deployments/1|Deploying")
 
 
 async def test_failures_are_recorded(env: Env) -> None:
@@ -165,7 +165,7 @@ async def test_failures_are_recorded(env: Env) -> None:
 async def test_email_needs_smtp(env: Env) -> None:
     channel = await env.channel(name="mail", kind="email", recipients="ops@example.com")
     test = await env.api.post(f"/api/notification-channels/{channel['id']}/test")
-    assert test.json() == {"ok": False, "error": "NOVAPORT_SMTP_HOST is not set."}
+    assert test.json() == {"ok": False, "error": "SWARMER_SMTP_HOST is not set."}
 
 
 async def test_channel_validation(env: Env) -> None:

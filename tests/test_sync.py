@@ -8,8 +8,8 @@ from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from novaport.crypto import Cipher
-from novaport.models import (
+from swarmer.crypto import Cipher
+from swarmer.models import (
     Deployment,
     DeploymentStatus,
     DeployMode,
@@ -18,8 +18,8 @@ from novaport.models import (
     Stack,
     StackType,
 )
-from novaport.sops import age_recipient, generate_age_key
-from novaport.stacks.sync import Syncer
+from swarmer.sops import age_recipient, generate_age_key
+from swarmer.stacks.sync import Syncer
 from tests.conftest import TEST_SECRET_KEY, make_settings
 from tests.gitrepo import COMPOSE, Repo
 
@@ -82,7 +82,7 @@ async def env(clean_db: str, tmp_path: Path) -> AsyncIterator[Env]:
     origin = Repo(tmp_path / "origin")
     origin.write("stacks/web/compose.yaml", COMPOSE)
     origin.write("stacks/api/compose.yaml", COMPOSE)
-    origin.write("stacks/api/novaport.yaml", "deploy: auto\ntype: compose\n")
+    origin.write("stacks/api/swarmer.yaml", "deploy: auto\ntype: compose\n")
     origin.write("stacks/notes/README.md", "not a stack")
     origin.write("README.md", "infra")
     origin.commit("Initial stacks")
@@ -153,7 +153,7 @@ async def test_newer_revision_supersedes_waiting_deployment(env: Env) -> None:
 
 
 async def test_manual_mode_queues_nothing(env: Env) -> None:
-    env.origin.write("stacks/api/novaport.yaml", "deploy: manual\n")
+    env.origin.write("stacks/api/swarmer.yaml", "deploy: manual\n")
     env.origin.commit("Manual api")
     await env.add_repository(default_deploy_mode=DeployMode.MANUAL)
     result = await env.syncer.sync(env.repo_id)
@@ -164,7 +164,7 @@ async def test_manual_mode_queues_nothing(env: Env) -> None:
 async def test_invalid_settings_block_new_revisions(env: Env) -> None:
     await env.add_repository()
     await env.syncer.sync(env.repo_id)
-    env.origin.write("stacks/web/novaport.yaml", "deploy: sometimes\n")
+    env.origin.write("stacks/web/swarmer.yaml", "deploy: sometimes\n")
     env.origin.write("stacks/web/compose.yaml", COMPOSE.replace("alpine", "1.29"))
     env.origin.commit("Typo")
 
@@ -222,7 +222,7 @@ async def test_empty_repository_gets_a_first_commit(env: Env, tmp_path: Path) ->
         "stacks/.gitkeep",
     ]
     assert age_recipient(age_key) in env.origin.show(".sops.yaml", "main")
-    assert env.origin.log("%an <%ae>", "main") == "Novaport <novaport@localhost>"
+    assert env.origin.log("%an <%ae>", "main") == "Swarmer <swarmer@localhost>"
     assert (await env.repository()).last_error is None
 
     again = await env.syncer.sync(env.repo_id)

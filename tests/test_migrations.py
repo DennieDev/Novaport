@@ -8,8 +8,8 @@ from alembic.migration import MigrationContext
 from sqlalchemy import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from novaport.migrate import alembic_config, upgrade
-from novaport.models import Base
+from swarmer.migrate import alembic_config, upgrade
+from swarmer.models import Base
 from tests.conftest import TEST_DATABASE_URL
 
 pytestmark = pytest.mark.postgres

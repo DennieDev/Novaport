@@ -103,7 +103,7 @@
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<title>Novaport</title>
+	<title>Swarmer</title>
 </svelte:head>
 
 {#if isLogin}
@@ -114,11 +114,11 @@
 			<button class="menu" aria-label="Menu" onclick={() => (menuOpen = !menuOpen)}>
 				<Icon name="menu" size={18} />
 			</button>
-			<a class="brand" href="/"><img src={favicon} alt="" width="20" height="20" />Novaport</a>
+			<a class="brand" href="/"><img src={favicon} alt="" width="20" height="20" />Swarmer</a>
 		</header>
 
 		<aside class:open={menuOpen}>
-			<a class="brand" href="/"><img src={favicon} alt="" width="22" height="22" />Novaport</a>
+			<a class="brand" href="/"><img src={favicon} alt="" width="22" height="22" />Swarmer</a>
 			<nav>
 				{#each visibleGroups as group (group.title)}
 					{#if group.title}<div class="group">{group.title}</div>{/if}

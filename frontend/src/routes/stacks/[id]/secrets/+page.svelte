@@ -89,8 +89,8 @@
 
 {#if sops && !sops.available}
 	<p class="error">
-		NOVAPORT_AGE_KEY is not set, so Novaport can't read or write secrets. Generate one with
-		<code>novaport generate-age-key</code>.
+		SWARMER_AGE_KEY is not set, so Swarmer can't read or write secrets. Generate one with
+		<code>swarmer generate-age-key</code>.
 	</p>
 {:else if saved}
 	<div class="panel">
@@ -167,7 +167,7 @@
 	{/if}
 	{#if sops?.recipient}
 		<p class="muted small">
-			Novaport's public key: <code>{sops.recipient}</code>. Add it to the repository's
+			Swarmer's public key: <code>{sops.recipient}</code>. Add it to the repository's
 			<code>.sops.yaml</code> next to your own key so both of you can decrypt.
 		</p>
 	{/if}

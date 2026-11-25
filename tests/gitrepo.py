@@ -22,7 +22,7 @@ class Repo:
         self.path = path
         path.mkdir(parents=True, exist_ok=True)
         self.git("init", "--quiet", "--initial-branch=main")
-        # Lets Novaport push to this non-bare test repository and updates its files.
+        # Lets Swarmer push to this non-bare test repository and updates its files.
         self.git("config", "receive.denyCurrentBranch", "updateInstead")
 
     @property

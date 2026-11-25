@@ -20,18 +20,18 @@ jobs:
       postgres:
         image: postgres:18-alpine
         env:
-          POSTGRES_USER: novaport
-          POSTGRES_PASSWORD: novaport
-          POSTGRES_DB: novaport_test
+          POSTGRES_USER: swarmer
+          POSTGRES_PASSWORD: swarmer
+          POSTGRES_DB: swarmer_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U novaport -d novaport_test"
+          --health-cmd "pg_isready -U swarmer -d swarmer_test"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
     env:
-      NOVAPORT_TEST_DATABASE_URL: postgresql+asyncpg://novaport:novaport@localhost:5432/novaport_test
+      SWARMER_TEST_DATABASE_URL: postgresql+asyncpg://swarmer:swarmer@localhost:5432/swarmer_test
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -75,18 +75,18 @@ jobs:
       postgres:
         image: postgres:18-alpine
         env:
-          POSTGRES_USER: novaport
-          POSTGRES_PASSWORD: novaport
-          POSTGRES_DB: novaport_test
+          POSTGRES_USER: swarmer
+          POSTGRES_PASSWORD: swarmer
+          POSTGRES_DB: swarmer_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U novaport -d novaport_test"
+          --health-cmd "pg_isready -U swarmer -d swarmer_test"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
     env:
-      NOVAPORT_TEST_DATABASE_URL: postgresql+asyncpg://novaport:novaport@localhost:5432/novaport_test
+      SWARMER_TEST_DATABASE_URL: postgresql+asyncpg://swarmer:swarmer@localhost:5432/swarmer_test
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -95,7 +95,7 @@ jobs:
           context: .
           push: false
           load: true
-          tags: novaport:dev
+          tags: swarmer:dev
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - uses: astral-sh/setup-uv@v7
@@ -111,7 +111,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/bin/sops"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Start a test Swarm
-        run: NOVAPORT_SWARM_AGENT_IMAGE=novaport:dev tests/integration/swarm.sh up >> "$GITHUB_ENV"
+        run: SWARMER_SWARM_AGENT_IMAGE=swarmer:dev tests/integration/swarm.sh up >> "$GITHUB_ENV"
       - run: uv sync --locked
       - run: uv run pytest tests/integration --durations=10
       - uses: actions/setup-node@v7

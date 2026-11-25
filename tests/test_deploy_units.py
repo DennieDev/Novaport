@@ -9,13 +9,13 @@ import yaml
 from fastapi import HTTPException
 from starlette.datastructures import Headers
 
-from novaport.crypto import Cipher, MissingSecretKey, generate_key, generate_ssh_keypair
-from novaport.deploy.compose import ComposeError, add_labels
-from novaport.deploy.converge import _parse_time, converge_swarm, service_state
-from novaport.models import DeployMode, StackType
-from novaport.server.api.repositories import check_url
-from novaport.stacks.settings import InvalidSettings, parse_settings, stack_name
-from novaport.stacks.webhooks import verify
+from swarmer.crypto import Cipher, MissingSecretKey, generate_key, generate_ssh_keypair
+from swarmer.deploy.compose import ComposeError, add_labels
+from swarmer.deploy.converge import _parse_time, converge_swarm, service_state
+from swarmer.models import DeployMode, StackType
+from swarmer.server.api.repositories import check_url
+from swarmer.stacks.settings import InvalidSettings, parse_settings, stack_name
+from swarmer.stacks.webhooks import verify
 
 
 def test_cipher_round_trip() -> None:
@@ -37,10 +37,10 @@ def test_cipher_with_wrong_key() -> None:
 
 
 def test_ssh_keypair() -> None:
-    private, public = generate_ssh_keypair("novaport-infra")
+    private, public = generate_ssh_keypair("swarmer-infra")
     assert private.startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
     assert public.startswith("ssh-ed25519 ")
-    assert public.endswith(" novaport-infra")
+    assert public.endswith(" swarmer-infra")
 
 
 def test_add_labels_swarm_merges_existing() -> None:
@@ -52,18 +52,18 @@ def test_add_labels_swarm_merges_existing() -> None:
             }
         }
     )
-    result = yaml.safe_load(add_labels(normalized, StackType.SWARM, {"novaport.stack": "shop"}))
+    result = yaml.safe_load(add_labels(normalized, StackType.SWARM, {"swarmer.stack": "shop"}))
     assert result["services"]["web"]["deploy"]["labels"] == {
         "traefik.enable": "true",
-        "novaport.stack": "shop",
+        "swarmer.stack": "shop",
     }
-    assert result["services"]["db"]["deploy"]["labels"] == {"novaport.stack": "shop"}
+    assert result["services"]["db"]["deploy"]["labels"] == {"swarmer.stack": "shop"}
 
 
 def test_add_labels_compose_uses_container_labels() -> None:
     normalized = "services:\n  web:\n    image: nginx\n    labels:\n      a: '1'\n"
-    result = yaml.safe_load(add_labels(normalized, StackType.COMPOSE, {"novaport.stack": "shop"}))
-    assert result["services"]["web"]["labels"] == {"a": "1", "novaport.stack": "shop"}
+    result = yaml.safe_load(add_labels(normalized, StackType.COMPOSE, {"swarmer.stack": "shop"}))
+    assert result["services"]["web"]["labels"] == {"a": "1", "swarmer.stack": "shop"}
 
 
 def test_swarm_rendering_keeps_literal_dollars() -> None:

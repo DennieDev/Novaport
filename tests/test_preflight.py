@@ -3,9 +3,9 @@ from typing import Any
 
 import pytest
 
-from novaport.deploy.constraints import InvalidConstraint, eligible_nodes, matches
-from novaport.deploy.preflight import bind_sources, preflight, published_ports
-from novaport.models import StackType
+from swarmer.deploy.constraints import InvalidConstraint, eligible_nodes, matches
+from swarmer.deploy.preflight import bind_sources, preflight, published_ports
+from swarmer.models import StackType
 from tests.fakes import FakeAgents, FakeReader
 
 

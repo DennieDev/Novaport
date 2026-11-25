@@ -44,17 +44,17 @@ COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose \
 COPY --from=sops /sops /usr/local/bin/sops
 COPY --from=python /app/.venv /app/.venv
 COPY --from=frontend /src/build /app/static
-RUN mkdir -p /var/lib/novaport
-VOLUME /var/lib/novaport
+RUN mkdir -p /var/lib/swarmer
+VOLUME /var/lib/swarmer
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    NOVAPORT_STATIC_DIR=/app/static
+    SWARMER_STATIC_DIR=/app/static
 
-LABEL org.opencontainers.image.title="Novaport" \
-      org.opencontainers.image.source="https://github.com/DennieDev/Novaport" \
+LABEL org.opencontainers.image.title="Swarmer" \
+      org.opencontainers.image.source="https://github.com/dennielabs/swarmer" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
 EXPOSE 8000
-ENTRYPOINT ["novaport"]
+ENTRYPOINT ["swarmer"]
 CMD ["server"]

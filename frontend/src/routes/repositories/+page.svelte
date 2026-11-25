@@ -52,7 +52,7 @@
 <h1>Repositories</h1>
 <p class="muted">
 	Each repository holds stacks, one folder per stack under the stacks folder. Edits made in
-	Novaport are committed back, so the deploy key or token needs write access for that.
+	Swarmer are committed back, so the deploy key or token needs write access for that.
 </p>
 
 <Status loading={repos.loading && !repos.data} error={repos.error} />
@@ -115,7 +115,7 @@
 			</select>
 		</label>
 		<label>
-			Edits from Novaport
+			Edits from Swarmer
 			<select bind:value={form.default_edit_mode}>
 				<option value="commit">Commit to the branch</option>
 				<option value="pr">Open a pull request</option>

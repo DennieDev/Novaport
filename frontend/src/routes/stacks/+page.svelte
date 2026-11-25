@@ -24,7 +24,7 @@
 {#if unmanaged?.data?.length}
 	<p class="muted">
 		{unmanaged.data.length} stack{unmanaged.data.length === 1 ? '' : 's'} running here
-		{unmanaged.data.length === 1 ? 'was' : 'were'} deployed without Novaport.
+		{unmanaged.data.length === 1 ? 'was' : 'were'} deployed without Swarmer.
 		<a href="/stacks/unmanaged">Add them to git</a>
 	</p>
 {/if}

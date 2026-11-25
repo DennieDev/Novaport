@@ -4,7 +4,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import { defineConfig } from 'vitest/config';
 
-const backend = process.env.NOVAPORT_BACKEND ?? 'http://localhost:8000';
+const backend = process.env.SWARMER_BACKEND ?? 'http://localhost:8000';
 
 export default defineConfig({
 	plugins: [

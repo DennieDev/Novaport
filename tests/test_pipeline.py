@@ -16,12 +16,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
 
-from novaport.crypto import Cipher
-from novaport.deploy.compose import secret_name
-from novaport.deploy.pipeline import Pipeline
-from novaport.docker.views import STACK_LABEL
-from novaport.jobs import Jobs
-from novaport.models import (
+from swarmer.crypto import Cipher
+from swarmer.deploy.compose import secret_name
+from swarmer.deploy.pipeline import Pipeline
+from swarmer.docker.views import STACK_LABEL
+from swarmer.jobs import Jobs
+from swarmer.models import (
     Deployment,
     DeploymentEvent,
     DeploymentStatus,
@@ -31,11 +31,11 @@ from novaport.models import (
     Stack,
     StackType,
 )
-from novaport.notifications import Event
-from novaport.process import Result
-from novaport.registries.client import Login
-from novaport.sops import Sops, generate_age_key
-from novaport.stacks.sync import Syncer, mirror_for, mirror_path
+from swarmer.notifications import Event
+from swarmer.process import Result
+from swarmer.registries.client import Login
+from swarmer.sops import Sops, generate_age_key
+from swarmer.stacks.sync import Syncer, mirror_for, mirror_path
 from tests.conftest import SOPS_BINARY, TEST_SECRET_KEY, make_settings
 from tests.fakes import FakeAgents, FakeReader
 from tests.gitrepo import COMPOSE, Repo
@@ -89,7 +89,7 @@ class FakeCli:
         self.apply_options = {"prune": prune, "pull_images": pull_images}
         self.rendered = yaml.safe_load((folder / compose_file).read_text())
         self.apply_env = dict(env)
-        secrets_dir = folder / ".novaport-secrets"
+        secrets_dir = folder / ".swarmer-secrets"
         if secrets_dir.is_dir():
             self.secret_files = {f.name: f.read_text() for f in secrets_dir.iterdir()}
         return self.apply_result
@@ -187,12 +187,12 @@ async def test_successful_swarm_deploy(env: Env) -> None:
     assert status == DeploymentStatus.SUCCEEDED
     assert env.cli.calls == [
         "config swarm web compose.yaml",
-        "apply swarm web .novaport-compose.yaml",
+        "apply swarm web .swarmer-compose.yaml",
     ]
     assert env.cli.env_seen == {"MODE": "prod"}
     labels = env.cli.rendered["services"]["web"]["deploy"]["labels"]
-    assert labels["novaport.stack"] == "web"
-    assert len(labels["novaport.commit"]) == 40
+    assert labels["swarmer.stack"] == "web"
+    assert len(labels["swarmer.commit"]) == 40
 
     d = await env.deployment(deployment_id)
     assert d.stack.last_good_revision_id == d.revision_id
@@ -303,12 +303,12 @@ async def test_secrets_env_is_refused_for_now(env: Env) -> None:
 
 
 async def test_compose_stack_labels_containers(env: Env) -> None:
-    env.origin.write("stacks/web/novaport.yaml", "type: compose\n")
+    env.origin.write("stacks/web/swarmer.yaml", "type: compose\n")
     env.origin.commit("Compose")
     deployment_id = await env.setup()
     assert await env.pipeline.run(deployment_id) == DeploymentStatus.SUCCEEDED
     assert env.cli.env_seen == {}  # docker compose reads .env itself
-    assert env.cli.rendered["services"]["web"]["labels"]["novaport.stack"] == "web"
+    assert env.cli.rendered["services"]["web"]["labels"]["swarmer.stack"] == "web"
 
 
 async def test_only_pending_deployments_run(env: Env) -> None:
@@ -349,7 +349,7 @@ async def test_worker_runs_pending_and_fails_orphaned(env: Env) -> None:
 
 
 async def test_worker_resumes_a_deployment_that_was_converging(env: Env) -> None:
-    """The server that applied the stack was replaced by the deploy, as when Novaport
+    """The server that applied the stack was replaced by the deploy, as when Swarmer
     deploys its own stack."""
     deployment_id = await env.setup()
     async with env.maker() as db:
@@ -369,7 +369,7 @@ async def test_worker_resumes_a_deployment_that_was_converging(env: Env) -> None
     assert d.stack.last_good_revision_id == d.revision_id
     assert env.cli.calls == []
     messages = [e.message for e in d.events]
-    assert messages[0] == "Novaport restarted; watching the rollout again."
+    assert messages[0] == "Swarmer restarted; watching the rollout again."
     assert messages[-1] == "All services are running."
 
 
@@ -428,9 +428,9 @@ async def test_sops_secrets_become_hashed_swarm_secrets(env: Env) -> None:
     assert await env.pipeline.run(deployment_id) == DeploymentStatus.SUCCEEDED
     secret = env.cli.rendered["secrets"]["db_password"]
     assert secret["name"] == secret_name("web", "db_password", "hunter2")
-    assert secret["file"] == "./.novaport-secrets/DB_PASSWORD"
+    assert secret["file"] == "./.swarmer-secrets/DB_PASSWORD"
     assert env.cli.secret_files == {"DB_PASSWORD": "hunter2"}
-    assert env.cli.calls[0] == "config swarm web .novaport-source.yaml"
+    assert env.cli.calls[0] == "config swarm web .swarmer-source.yaml"
     assert env.cli.removed_secrets == ["web_db_password_0badc0de"]
 
 
@@ -440,7 +440,7 @@ async def test_secrets_without_age_key_fail_clearly(env: Env) -> None:
     deployment_id = await env.setup()
     assert await env.pipeline.run(deployment_id) == DeploymentStatus.FAILED
     d = await env.deployment(deployment_id)
-    assert d.error == "secrets.env is present, but NOVAPORT_AGE_KEY is not set."
+    assert d.error == "secrets.env is present, but SWARMER_AGE_KEY is not set."
 
 
 async def test_missing_secret_variable(env: Env) -> None:

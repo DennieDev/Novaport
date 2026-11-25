@@ -211,7 +211,7 @@
 		<p class="muted">Users whose groups claim contains the value become members of the group.</p>
 		{#each form.mappings as m, i (i)}
 			<p class="row">
-				<input bind:value={m.claim_value} placeholder="claim value, e.g. novaport-admins" />
+				<input bind:value={m.claim_value} placeholder="claim value, e.g. swarmer-admins" />
 				<span>→</span>
 				<select bind:value={m.group_id}>
 					<option value="" disabled>Group…</option>

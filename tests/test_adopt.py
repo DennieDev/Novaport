@@ -11,10 +11,10 @@ from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from novaport.models import AuditEntry, Deployment, Stack
-from novaport.server.app import create_app
-from novaport.sops import Sops, generate_age_key
-from novaport.stacks.adopt import compose_project, duration, looks_secret, size, swarm_compose
+from swarmer.models import AuditEntry, Deployment, Stack
+from swarmer.server.app import create_app
+from swarmer.sops import Sops, generate_age_key
+from swarmer.stacks.adopt import compose_project, duration, looks_secret, size, swarm_compose
 from tests.conftest import SOPS_BINARY, client_for, make_settings
 from tests.fakes import FakeReader
 from tests.gitrepo import Repo
@@ -254,7 +254,7 @@ async def test_adopting_commits_the_stack_for_manual_deploys(
     assert response.json()["queued_deployments"] == 0
 
     assert origin.show("stacks/legacy/compose.yaml") == generated["compose"]
-    assert yaml.safe_load(origin.show("stacks/legacy/novaport.yaml")) == {"deploy": "manual"}
+    assert yaml.safe_load(origin.show("stacks/legacy/swarmer.yaml")) == {"deploy": "manual"}
     assert origin.log("%an") == "admin"
     assert [u["name"] for u in (await client.get("/api/unmanaged")).json()] == ["blog"]
 
@@ -323,7 +323,7 @@ async def test_adopting_a_compose_project_sets_its_type(
         json={"repository_id": repos[0]["id"], "compose": generated["compose"], "deploy": "auto"},
     )
     assert response.status_code == 200, response.text
-    assert yaml.safe_load(origin.show("stacks/blog/novaport.yaml")) == {
+    assert yaml.safe_load(origin.show("stacks/blog/swarmer.yaml")) == {
         "deploy": "auto",
         "type": "compose",
     }
@@ -332,8 +332,8 @@ async def test_adopting_a_compose_project_sets_its_type(
 def test_secret_looking_variables() -> None:
     for name, value in [
         ("POSTGRES_PASSWORD", "x"),
-        ("NOVAPORT_SECRET_KEY", "x"),
-        ("NOVAPORT_AGE_KEY", "x"),
+        ("SWARMER_SECRET_KEY", "x"),
+        ("SWARMER_AGE_KEY", "x"),
         ("API_KEY", "x"),
         ("GITHUB_TOKEN", "x"),
         ("DATABASE_URL", "postgresql://app:hunter2@db/app"),
@@ -396,9 +396,9 @@ OWN_SERVICES = [
     {
         "ID": "np1",
         "Spec": {
-            **_service("server", ["NOVAPORT_SECRET_KEY=k3y", "NOVAPORT_LOG_LEVEL=info"])["Spec"],
-            "Name": "novaport_server",
-            "Labels": {"com.docker.stack.namespace": "novaport"},
+            **_service("server", ["SWARMER_SECRET_KEY=k3y", "SWARMER_LOG_LEVEL=info"])["Spec"],
+            "Name": "swarmer_server",
+            "Labels": {"com.docker.stack.namespace": "swarmer"},
         },
     }
 ]
@@ -408,7 +408,7 @@ OWN_SERVICES = [
 async def own_app(
     clean_db: str, tmp_path: Path
 ) -> AsyncIterator[tuple[httpx.AsyncClient, Repo, Sops]]:
-    """Novaport running in the stack `novaport`, with an age key."""
+    """Swarmer running in the stack `swarmer`, with an age key."""
     age_key = generate_age_key()
     origin = Repo(tmp_path / "origin")
     origin.write("README.md", "infra")
@@ -419,8 +419,8 @@ async def own_app(
         socket.gethostname(): {
             "Config": {
                 "Labels": {
-                    "com.docker.stack.namespace": "novaport",
-                    "com.docker.swarm.service.name": "novaport_server",
+                    "com.docker.stack.namespace": "swarmer",
+                    "com.docker.swarm.service.name": "swarmer_server",
                 }
             }
         }
@@ -442,26 +442,26 @@ async def own_app(
 
 @pytest.mark.postgres
 @pytest.mark.sops
-async def test_adopting_novaport_itself_keeps_its_secrets_out_of_git(
+async def test_adopting_swarmer_itself_keeps_its_secrets_out_of_git(
     own_app: tuple[httpx.AsyncClient, Repo, Sops],
 ) -> None:
     client, origin, sops = own_app
-    generated = (await client.get("/api/unmanaged/swarm/novaport")).json()
+    generated = (await client.get("/api/unmanaged/swarm/swarmer")).json()
     assert generated["own"] is True
-    assert generated["secrets"] == ["NOVAPORT_SECRET_KEY"]
+    assert generated["secrets"] == ["SWARMER_SECRET_KEY"]
     assert "k3y" not in generated["compose"]
-    assert "Novaport itself runs in" in generated["notes"][0]
+    assert "Swarmer itself runs in" in generated["notes"][0]
     server = yaml.safe_load(generated["compose"])["services"]["server"]
     assert server["deploy"]["update_config"]["order"] == "start-first"
 
     repos = (await client.get("/api/repositories")).json()
     response = await client.post(
-        "/api/unmanaged/swarm/novaport/adopt",
+        "/api/unmanaged/swarm/swarmer/adopt",
         json={"repository_id": repos[0]["id"], "compose": generated["compose"]},
     )
     assert response.status_code == 200, response.text
 
-    assert "k3y" not in origin.show("stacks/novaport/compose.yaml")
-    encrypted = origin.show("stacks/novaport/secrets.env")
+    assert "k3y" not in origin.show("stacks/swarmer/compose.yaml")
+    encrypted = origin.show("stacks/swarmer/secrets.env")
     assert "k3y" not in encrypted
-    assert await sops.decrypt(encrypted.encode()) == {"NOVAPORT_SECRET_KEY": "k3y"}
+    assert await sops.decrypt(encrypted.encode()) == {"SWARMER_SECRET_KEY": "k3y"}

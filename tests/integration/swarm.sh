@@ -7,15 +7,15 @@
 #   tests/integration/swarm.sh env     print those variables again
 #   tests/integration/swarm.sh down    remove everything
 #
-# Set NOVAPORT_SWARM_AGENT_IMAGE (for example novaport:dev, built with `docker build -t
-# novaport:dev .`) to also run an agent on every node. Requires Linux: the tests reach the
+# Set SWARMER_SWARM_AGENT_IMAGE (for example swarmer:dev, built with `docker build -t
+# swarmer:dev .`) to also run an agent on every node. Requires Linux: the tests reach the
 # agents on the nodes' container IPs.
 set -eu
 
-NAME=${NOVAPORT_SWARM_NAME:-novaport-swarm}
-PORT=${NOVAPORT_SWARM_PORT:-23750}
-DIND_IMAGE=${NOVAPORT_SWARM_DIND_IMAGE:-docker:29-dind}
-AGENT_IMAGE=${NOVAPORT_SWARM_AGENT_IMAGE:-}
+NAME=${SWARMER_SWARM_NAME:-swarmer-swarm}
+PORT=${SWARMER_SWARM_PORT:-23750}
+DIND_IMAGE=${SWARMER_SWARM_DIND_IMAGE:-docker:29-dind}
+AGENT_IMAGE=${SWARMER_SWARM_AGENT_IMAGE:-}
 AGENT_TOKEN=integration-test-token
 # Loaded into every node up front, so tests don't depend on Docker Hub rate limits.
 IMAGES="busybox:1.37"
@@ -45,15 +45,15 @@ load_image() {
 }
 
 print_env() {
-    echo "NOVAPORT_TEST_DOCKER_HOST=tcp://127.0.0.1:$PORT"
-    if on manager docker container inspect novaport-agent >/dev/null 2>&1; then
+    echo "SWARMER_TEST_DOCKER_HOST=tcp://127.0.0.1:$PORT"
+    if on manager docker container inspect swarmer-agent >/dev/null 2>&1; then
         urls=""
         for n in $NODES; do
             ip=$(docker inspect -f "{{(index .NetworkSettings.Networks \"$NAME\").IPAddress}}" "$(node "$n")")
             urls="${urls:+$urls,}http://$ip:9001"
         done
-        echo "NOVAPORT_TEST_AGENT_URLS=$urls"
-        echo "NOVAPORT_TEST_AGENT_TOKEN=$AGENT_TOKEN"
+        echo "SWARMER_TEST_AGENT_URLS=$urls"
+        echo "SWARMER_TEST_AGENT_TOKEN=$AGENT_TOKEN"
     fi
 }
 
@@ -82,10 +82,10 @@ up() {
     if [ -n "$AGENT_IMAGE" ]; then
         load_image "$AGENT_IMAGE"
         for n in $NODES; do
-            on "$n" docker run --detach --name novaport-agent --restart always \
+            on "$n" docker run --detach --name swarmer-agent --restart always \
                 --publish 9001:9001 \
                 --volume /var/run/docker.sock:/var/run/docker.sock --volume /:/host:ro \
-                --env NOVAPORT_AGENT_TOKEN="$AGENT_TOKEN" "$AGENT_IMAGE" agent >/dev/null
+                --env SWARMER_AGENT_TOKEN="$AGENT_TOKEN" "$AGENT_IMAGE" agent >/dev/null
         done
     fi
     print_env

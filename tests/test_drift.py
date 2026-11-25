@@ -2,7 +2,7 @@
 import copy
 from typing import Any
 
-from novaport.deploy.drift import compare, snapshot
+from swarmer.deploy.drift import compare, snapshot
 
 
 def service(name: str, replicas: int = 2, image: str = "nginx:1.27@sha256:aaa") -> dict[str, Any]:

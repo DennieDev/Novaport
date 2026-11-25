@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from novaport.auth.passwords import hash_password
-from novaport.migrate import upgrade
-from novaport.models import AuditEntry, Role, RoleBinding, User
-from novaport.server.app import create_app
+from swarmer.auth.passwords import hash_password
+from swarmer.migrate import upgrade
+from swarmer.models import AuditEntry, Role, RoleBinding, User
+from swarmer.server.app import create_app
 from tests.conftest import TEST_DATABASE_URL, as_admin, client_for, make_settings
 from tests.fakes import FakeAgents, FakeReader
 
@@ -113,7 +113,7 @@ async def test_agents_disabled(reader: FakeReader) -> None:
     async for client in client_for(_admin_app(FakeAgents(enabled=False), reader)):
         response = await client.get("/api/nodes/node1/disk")
         assert response.status_code == 503
-        assert "NOVAPORT_AGENT_TOKEN" in response.json()["detail"]
+        assert "SWARMER_AGENT_TOKEN" in response.json()["detail"]
 
 
 async def _truncate(url: str) -> None:

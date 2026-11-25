@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from novaport.server.app import create_app
+from swarmer.server.app import create_app
 from tests.conftest import client_for, make_settings
 from tests.fakes import FakeReader
 from tests.oidc_provider import CLIENT_ID, CLIENT_SECRET, ISSUER, FakeProvider, rsa_key

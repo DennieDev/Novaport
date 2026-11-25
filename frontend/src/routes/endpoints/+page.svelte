@@ -48,10 +48,10 @@
 
 <h1>Endpoints</h1>
 <p class="muted">
-	Docker hosts and Swarm clusters outside the one Novaport runs on. Each runs an agent that
-	connects out to Novaport, so the host needs no open ports. Pick one for a stack with
-	<code>endpoint: name</code> in its <code>novaport.yaml</code>; without it, a stack deploys to
-	<code>local</code>, the Swarm or host Novaport itself runs on.
+	Docker hosts and Swarm clusters outside the one Swarmer runs on. Each runs an agent that
+	connects out to Swarmer, so the host needs no open ports. Pick one for a stack with
+	<code>endpoint: name</code> in its <code>swarmer.yaml</code>; without it, a stack deploys to
+	<code>local</code>, the Swarm or host Swarmer itself runs on.
 </p>
 
 <Status loading={endpoints.loading && !endpoints.data} error={endpoints.error} />
@@ -67,8 +67,8 @@
 		<p class="muted">On a Swarm cluster, run this on a manager:</p>
 		<pre>{issued.swarm_command}</pre>
 		<p class="muted">
-			The agent needs to reach Novaport at the address in the key. Set
-			<code>NOVAPORT_PUBLIC_URL</code> if Novaport is behind a proxy.
+			The agent needs to reach Swarmer at the address in the key. Set
+			<code>SWARMER_PUBLIC_URL</code> if Swarmer is behind a proxy.
 		</p>
 		<button class="link" onclick={() => (issued = undefined)}>done</button>
 	</div>

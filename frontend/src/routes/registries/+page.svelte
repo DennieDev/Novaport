@@ -52,7 +52,7 @@
 
 <h1>Registries</h1>
 <p class="muted">
-	Credentials for private registries. Novaport uses them to check that images exist before a
+	Credentials for private registries. Swarmer uses them to check that images exist before a
 	deploy, to look for image updates, and passes them to Swarm so every node can pull. Use
 	<code>docker.io</code> for Docker Hub; a login there also raises its pull rate limit.
 </p>

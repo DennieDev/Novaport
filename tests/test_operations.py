@@ -9,7 +9,7 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy import func, select, update
 
-from novaport.models import (
+from swarmer.models import (
     AuditEntry,
     Deployment,
     DeploymentStatus,
@@ -21,9 +21,9 @@ from novaport.models import (
     StackType,
     User,
 )
-from novaport.process import Result
-from novaport.retention import Retention, prune
-from novaport.server.app import create_app
+from swarmer.process import Result
+from swarmer.retention import Retention, prune
+from swarmer.server.app import create_app
 from tests import test_access
 from tests.conftest import client_for, make_settings
 from tests.fakes import FakeReader
@@ -105,9 +105,9 @@ async def test_author_cannot_approve_their_own_change(env: Env, world: World) ->
     assert approved.status_code == 200, approved.text
 
 
-async def test_edits_made_in_novaport_count_as_the_users(env: Env, world: World) -> None:
+async def test_edits_made_in_swarmer_count_as_the_users(env: Env, world: World) -> None:
     await world.user("otto", (Role.OPERATOR, world.shop))
-    await set_author(world, world.shop, "otto@novaport.local")
+    await set_author(world, world.shop, "otto@swarmer.local")
     deployment_id = await queue_for_approval(world, world.shop)
     await login(env.api, "otto")
     assert (await env.api.post(f"/api/deployments/{deployment_id}/approve")).status_code == 403
@@ -116,7 +116,7 @@ async def test_edits_made_in_novaport_count_as_the_users(env: Env, world: World)
 async def test_other_deploy_modes_are_not_affected(env: Env, world: World) -> None:
     await world.user("otto", (Role.OPERATOR, world.shop))
     async with world.maker() as db:
-        await db.execute(update(Revision).values(author_email="otto@novaport.local"))
+        await db.execute(update(Revision).values(author_email="otto@swarmer.local"))
         await db.commit()
     await login(env.api, "otto")
     assert (await env.api.post(f"/api/stacks/{world.shop}/deploy", json={})).status_code == 202

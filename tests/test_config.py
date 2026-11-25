@@ -4,7 +4,7 @@ from datetime import timedelta
 import pytest
 from pydantic import ValidationError
 
-from novaport.config import Settings
+from swarmer.config import Settings
 
 
 @pytest.mark.parametrize(
@@ -23,12 +23,12 @@ from novaport.config import Settings
     ],
 )
 def test_durations(monkeypatch: pytest.MonkeyPatch, value: str, expected: timedelta) -> None:
-    monkeypatch.setenv("NOVAPORT_UPDATE_INTERVAL", value)
+    monkeypatch.setenv("SWARMER_UPDATE_INTERVAL", value)
     assert Settings(_env_file=None).update_interval == expected  # type: ignore[call-arg]
 
 
 @pytest.mark.parametrize("value", ["soon", "5 minutes", "h5", "5x"])
 def test_bad_durations_are_refused(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
-    monkeypatch.setenv("NOVAPORT_DRIFT_INTERVAL", value)
+    monkeypatch.setenv("SWARMER_DRIFT_INTERVAL", value)
     with pytest.raises(ValidationError):
         Settings(_env_file=None)  # type: ignore[call-arg]

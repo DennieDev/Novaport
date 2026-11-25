@@ -12,18 +12,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
 
-from novaport.crypto import Cipher
-from novaport.deploy.preflight import preflight
-from novaport.git import Identity
-from novaport.jobs import Jobs
-from novaport.models import DeployMode, ImageCheck, Repository, Revision, Stack, StackType
-from novaport.registries.client import RegistryClient
-from novaport.server.app import create_app
-from novaport.sops import Sops
-from novaport.stacks import editing
-from novaport.stacks.editing import StackEditor
-from novaport.stacks.sync import Syncer
-from novaport.updates.checker import UpdateChecker, UpdateEvent
+from swarmer.crypto import Cipher
+from swarmer.deploy.preflight import preflight
+from swarmer.git import Identity
+from swarmer.jobs import Jobs
+from swarmer.models import DeployMode, ImageCheck, Repository, Revision, Stack, StackType
+from swarmer.registries.client import RegistryClient
+from swarmer.server.app import create_app
+from swarmer.sops import Sops
+from swarmer.stacks import editing
+from swarmer.stacks.editing import StackEditor
+from swarmer.stacks.sync import Syncer
+from swarmer.updates.checker import UpdateChecker, UpdateEvent
 from tests.conftest import TEST_SECRET_KEY, client_for, make_settings
 from tests.fakes import FakeReader
 from tests.gitrepo import Repo
@@ -73,7 +73,7 @@ class Env:
             editor,
             RegistryClient(self.http),
             reader=lambda: None,
-            author=Identity("Novaport", "np@example.com"),
+            author=Identity("Swarmer", "np@example.com"),
         )
         self.events: list[UpdateEvent] = []
 
@@ -144,7 +144,7 @@ async def test_commit_action_updates_git_once(make_env: Any) -> None:
     assert env.origin.show("stacks/api/compose.yaml") == compose(
         "{mode: version, allow: minor, action: commit}", f"{IMAGE}:1.1.0"
     )
-    assert env.origin.log("%an|%s") == "Novaport|Update api in api to 1.1.0"
+    assert env.origin.log("%an|%s") == "Swarmer|Update api in api to 1.1.0"
     assert [(e.service, e.action_taken) for e in env.events] == [("api", "committed")]
 
     again = await env.check(stack)
@@ -203,7 +203,7 @@ async def test_pr_action(make_env: Any, monkeypatch: pytest.MonkeyPatch) -> None
     assert api.action_taken == "pr_opened"
     assert api.action_ref == "https://github.com/acme/infra/pull/7"
     assert env.origin.head() == head
-    assert opened[0]["head"] == "novaport/update-api-api-1.0.1"
+    assert opened[0]["head"] == "swarmer/update-api-api-1.0.1"
     assert f"{IMAGE}:1.0.1" in opened[0]["body"]
 
     await env.check(stack)

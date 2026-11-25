@@ -1,5 +1,5 @@
 [project]
-name = "novaport"
+name = "swarmer"
 version = "0.1.0rc8"
 description = "Git-driven management UI for Docker and Docker Swarm stacks"
 readme = "README.md"
@@ -32,10 +32,10 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/DennieDev/Novaport"
+Repository = "https://github.com/dennielabs/swarmer"
 
 [project.scripts]
-novaport = "novaport.cli:main"
+swarmer = "swarmer.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -55,7 +55,7 @@ ignore = ["S104", "ASYNC109"]
 [tool.mypy]
 strict = true
 python_version = "3.13"
-packages = ["novaport"]
+packages = ["swarmer"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]
@@ -69,9 +69,9 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]
 markers = [
-    "postgres: needs a Postgres database (NOVAPORT_TEST_DATABASE_URL)",
-    "sops: needs the sops binary (on PATH or NOVAPORT_TEST_SOPS)",
-    "swarm: needs a test Swarm (tests/integration/swarm.sh, NOVAPORT_TEST_DOCKER_HOST)",
+    "postgres: needs a Postgres database (SWARMER_TEST_DATABASE_URL)",
+    "sops: needs the sops binary (on PATH or SWARMER_TEST_SOPS)",
+    "swarm: needs a test Swarm (tests/integration/swarm.sh, SWARMER_TEST_DOCKER_HOST)",
 ]
 
 [dependency-groups]

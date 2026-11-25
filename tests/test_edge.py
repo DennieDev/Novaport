@@ -14,12 +14,12 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from novaport.agent.app import create_app as create_agent_app
-from novaport.edge.agent import EdgeAgent
-from novaport.edge.hub import EndpointOffline
-from novaport.edge.keys import EdgeKey, hash_secret, parse_token
-from novaport.edge.mux import Mux, Stream, StreamReset
-from novaport.server.app import create_app
+from swarmer.agent.app import create_app as create_agent_app
+from swarmer.edge.agent import EdgeAgent
+from swarmer.edge.hub import EndpointOffline
+from swarmer.edge.keys import EdgeKey, hash_secret, parse_token
+from swarmer.edge.mux import Mux, Stream, StreamReset
+from swarmer.server.app import create_app
 from tests.conftest import make_settings
 from tests.fakes import FakeReader
 from tests.gitrepo import COMPOSE, Repo
@@ -35,10 +35,10 @@ DOCKER_INFO = {
 
 
 def test_edge_key_round_trip() -> None:
-    key = EdgeKey("https://novaport.example.com/", uuid.uuid4(), "s3cret")
+    key = EdgeKey("https://swarmer.example.com/", uuid.uuid4(), "s3cret")
     decoded = EdgeKey.decode(key.encode())
     assert decoded == key
-    assert decoded.connect_url == "wss://novaport.example.com/api/edge/connect"
+    assert decoded.connect_url == "wss://swarmer.example.com/api/edge/connect"
     assert parse_token(f"Bearer {key.token}") == (key.endpoint_id, "s3cret")
     assert parse_token("Bearer nope") is None
     with pytest.raises(ValueError, match="Not a valid edge key"):
@@ -230,7 +230,7 @@ async def test_agent_connects_out_and_tunnels_docker(world: World) -> None:
     data = created.json()
     key = EdgeKey.decode(data["key"])
     assert key.url == world.base_url
-    assert "NOVAPORT_EDGE_KEY=" in data["docker_command"]
+    assert "SWARMER_EDGE_KEY=" in data["docker_command"]
     assert data["endpoint"]["connected"] is False
 
     agent = await world.start_agent(data["key"])
@@ -282,7 +282,7 @@ async def test_endpoint_names(world: World) -> None:
 async def test_stacks_pick_an_endpoint(world: World) -> None:
     origin = Repo(world.tmp / "origin")
     origin.write("stacks/web/compose.yaml", COMPOSE)
-    origin.write("stacks/web/novaport.yaml", "type: compose\nendpoint: edge\n")
+    origin.write("stacks/web/swarmer.yaml", "type: compose\nendpoint: edge\n")
     origin.commit("Add web")
     repo = (
         await world.api.post("/api/repositories", json={"name": "infra", "url": origin.url})

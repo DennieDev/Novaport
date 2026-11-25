@@ -4,9 +4,9 @@ from typing import Any
 
 import pytest
 
-from novaport.deploy import cli
-from novaport.models import StackType
-from novaport.process import Result
+from swarmer.deploy import cli
+from swarmer.models import StackType
+from swarmer.process import Result
 
 
 @pytest.fixture

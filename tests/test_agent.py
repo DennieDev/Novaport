@@ -8,8 +8,8 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from novaport.agent import paths
-from novaport.agent.app import create_app
+from swarmer.agent import paths
+from swarmer.agent.app import create_app
 from tests.conftest import client_for, make_settings
 
 TOKEN = "agent-token-for-tests"
@@ -137,7 +137,7 @@ async def agent(host: Path) -> AsyncIterator[httpx.AsyncClient]:
 
 
 def test_agent_requires_a_token() -> None:
-    with pytest.raises(RuntimeError, match="NOVAPORT_AGENT_TOKEN"):
+    with pytest.raises(RuntimeError, match="SWARMER_AGENT_TOKEN"):
         create_app(make_settings(agent_token=None))
 
 

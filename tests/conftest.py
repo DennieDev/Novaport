@@ -16,27 +16,27 @@ from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from novaport.auth.access import Access
-from novaport.config import Settings
-from novaport.crypto import generate_key
-from novaport.migrate import upgrade
-from novaport.models import Role, User
-from novaport.server.app import create_app
-from novaport.server.deps import current_access, current_user
+from swarmer.auth.access import Access
+from swarmer.config import Settings
+from swarmer.crypto import generate_key
+from swarmer.migrate import upgrade
+from swarmer.models import Role, User
+from swarmer.server.app import create_app
+from swarmer.server.deps import current_access, current_user
 from tests.fakes import FakeReader
 
-TEST_DATABASE_URL = os.environ.get("NOVAPORT_TEST_DATABASE_URL")
-SOPS_BINARY = os.environ.get("NOVAPORT_TEST_SOPS") or shutil.which("sops")
-TEST_DOCKER_HOST = os.environ.get("NOVAPORT_TEST_DOCKER_HOST")
+TEST_DATABASE_URL = os.environ.get("SWARMER_TEST_DATABASE_URL")
+SOPS_BINARY = os.environ.get("SWARMER_TEST_SOPS") or shutil.which("sops")
+TEST_DOCKER_HOST = os.environ.get("SWARMER_TEST_DOCKER_HOST")
 
 # Nothing listens on port 1, so connections fail immediately.
-UNREACHABLE_DATABASE_URL = "postgresql+asyncpg://novaport:novaport@127.0.0.1:1/novaport"
+UNREACHABLE_DATABASE_URL = "postgresql+asyncpg://swarmer:swarmer@127.0.0.1:1/swarmer"
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    no_db = pytest.mark.skip(reason="NOVAPORT_TEST_DATABASE_URL is not set")
-    no_sops = pytest.mark.skip(reason="sops is not installed (or set NOVAPORT_TEST_SOPS)")
-    no_swarm = pytest.mark.skip(reason="NOVAPORT_TEST_DOCKER_HOST is not set")
+    no_db = pytest.mark.skip(reason="SWARMER_TEST_DATABASE_URL is not set")
+    no_sops = pytest.mark.skip(reason="sops is not installed (or set SWARMER_TEST_SOPS)")
+    no_swarm = pytest.mark.skip(reason="SWARMER_TEST_DOCKER_HOST is not set")
     for item in items:
         if "postgres" in item.keywords and not TEST_DATABASE_URL:
             item.add_marker(no_db)
@@ -47,7 +47,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 
 TEST_SECRET_KEY = generate_key()
-TEST_DATA_ROOT = Path(tempfile.mkdtemp(prefix="novaport-tests-"))
+TEST_DATA_ROOT = Path(tempfile.mkdtemp(prefix="swarmer-tests-"))
 atexit.register(shutil.rmtree, TEST_DATA_ROOT, True)
 
 

@@ -1,11 +1,11 @@
-# Novaport design
+# Swarmer design
 
 Status: draft
 
 ## Overview
 
-Novaport is a self-hosted web UI for running Docker Compose and Docker Swarm stacks from a git
-repository. Git holds the desired state; Novaport validates it, deploys it, shows exactly what is
+Swarmer is a self-hosted web UI for running Docker Compose and Docker Swarm stacks from a git
+repository. Git holds the desired state; Swarmer validates it, deploys it, shows exactly what is
 running, and writes changes made in the UI back to git.
 
 It exists because the existing tools fall short in one of three ways:
@@ -30,7 +30,7 @@ It exists because the existing tools fall short in one of three ways:
 - Kubernetes or any other orchestrator.
 - "Projects", applications, or other groupings above the stack.
 - App templates or a catalog.
-- Building images. Novaport deploys images; CI builds them.
+- Building images. Swarmer deploys images; CI builds them.
 
 ## Concepts
 
@@ -41,7 +41,7 @@ It exists because the existing tools fall short in one of three ways:
 | Stack | A folder in a repository containing a compose file. Deployed as a Swarm stack or a Compose project. |
 | Revision | An immutable snapshot of a stack folder at a specific commit. |
 | Deployment | One attempt to make an endpoint match a revision. |
-| Agent | A Novaport process on every node for node-local operations. |
+| Agent | A Swarmer process on every node for node-local operations. |
 
 ## Architecture
 
@@ -50,12 +50,12 @@ It exists because the existing tools fall short in one of three ways:
                |  HTTPS + WebSocket
                v
    +-----------------------+         +------------+
-   |   novaport server     |-------->|  Postgres  |
+   |   swarmer server     |-------->|  Postgres  |
    |  (on a Swarm manager) |         +------------+
    +-----------------------+
      |  docker.sock    |   overlay network (token auth)
      v                 v
-  Docker API     novaport agent (global service, one per node)
+  Docker API     swarmer agent (global service, one per node)
   (cluster-          |
    level ops)        v
                 docker.sock + host paths (node-local ops)
@@ -81,8 +81,8 @@ running more than one server replica stays safe.
 
 ### Agent
 
-The same image and codebase, started as `novaport agent`. Deployed as a global service in
-Novaport's own stack, with the Docker socket and `/` (read-only) mounted.
+The same image and codebase, started as `swarmer agent`. Deployed as a global service in
+Swarmer's own stack, with the Docker socket and `/` (read-only) mounted.
 
 Responsibilities, all scoped to its own node:
 
@@ -118,7 +118,7 @@ the socket is connected, those pages poll only every two minutes as a fallback. 
 
 ### Image
 
-One image, `ghcr.io/denniedev/novaport`, containing the application, the docker CLI, the compose
+One image, `ghcr.io/dennielabs/swarmer`, containing the application, the docker CLI, the compose
 plugin, `git`, and `sops`.
 
 ## Repository layout
@@ -132,15 +132,15 @@ stacks/
     compose.yaml
     .env                   # optional, plain variables
     secrets.env            # optional, SOPS-encrypted
-    novaport.yaml          # optional, per-stack settings
+    swarmer.yaml          # optional, per-stack settings
   monitoring/
     compose.yaml
-    novaport.yaml
+    swarmer.yaml
 ```
 
 The stack name is the folder name. The `stacks/` root is configurable per repository.
 
-### `novaport.yaml`
+### `swarmer.yaml`
 
 Per-stack settings live in git, next to the compose file, so they are reviewed like any other
 change.
@@ -152,7 +152,7 @@ deploy: approve             # auto | approve | manual
 edits: pr                   # commit | pr  (how UI edits reach git)
 ```
 
-All keys are optional. Defaults come from the repository settings in Novaport.
+All keys are optional. Defaults come from the repository settings in Swarmer.
 
 ## Deploy pipeline
 
@@ -183,27 +183,27 @@ Outcome:
   not change, nothing in git is reverted, and nothing is rolled back automatically.
 
 Rolling back is an explicit action: deploy a previous revision. When edits go through git,
-rolling back the desired state means reverting the commit, which Novaport can do on request.
+rolling back the desired state means reverting the commit, which Swarmer can do on request.
 
 Only one deployment per stack runs at a time (Postgres advisory lock on the stack ID). A new
 revision arriving during a deploy is queued.
 
 ### Labels
 
-Everything Novaport deploys gets labels so live state can be traced back:
+Everything Swarmer deploys gets labels so live state can be traced back:
 
-- `novaport.stack`: stack name
-- `novaport.revision`: revision ID
-- `novaport.commit`: commit SHA
+- `swarmer.stack`: stack name
+- `swarmer.revision`: revision ID
+- `swarmer.commit`: commit SHA
 
 ### Drift detection
 
 A background job compares running services with the last deployed revision. A difference, for
 example someone running `docker service update` by hand, shows the stack as drifted with a diff.
-Novaport does not correct drift on its own. A redeploy does.
+Swarmer does not correct drift on its own. A redeploy does.
 
-After a successful Swarm deploy Novaport stores each service's spec as the baseline. A job
-(`NOVAPORT_DRIFT_INTERVAL`, five minutes by default) compares the running specs with it and lists
+After a successful Swarm deploy Swarmer stores each service's spec as the baseline. A job
+(`SWARMER_DRIFT_INTERVAL`, five minutes by default) compares the running specs with it and lists
 the differences by path: changed replicas, image, environment, removed services, and services
 with the stack's label that the stack doesn't define. `docker service update --force` only
 restarts tasks and is not drift, and the order of plain lists such as environment variables is
@@ -211,39 +211,39 @@ ignored. Compose projects are not checked yet.
 
 ## Git sync
 
-### Inbound (git to Novaport)
+### Inbound (git to Swarmer)
 
 - Webhook endpoint per repository, with HMAC verification for GitHub, GitLab, Gitea, and Forgejo.
 - Polling as a fallback, interval configurable per repository.
-- On a new commit, Novaport fetches, finds the stack folders that changed, and creates a revision
+- On a new commit, Swarmer fetches, finds the stack folders that changed, and creates a revision
   for each.
 - What happens next depends on the stack's deploy mode:
   - `auto`: deploy immediately.
   - `approve`: the revision waits until a user with permission approves it. With
-    `NOVAPORT_SEPARATE_APPROVER=true`, the author of the change can't approve it, or deploy it by
-    hand on that stack. Authors are matched on the commit's email address; edits made in Novaport
-    carry the user's email, or `<username>@novaport.local` when they have none. The setting is
-    server-wide rather than in `novaport.yaml`, so a change can't switch it off for itself.
+    `SWARMER_SEPARATE_APPROVER=true`, the author of the change can't approve it, or deploy it by
+    hand on that stack. Authors are matched on the commit's email address; edits made in Swarmer
+    carry the user's email, or `<username>@swarmer.local` when they have none. The setting is
+    server-wide rather than in `swarmer.yaml`, so a change can't switch it off for itself.
   - `manual`: the revision is recorded and nothing else happens.
 - Stack folders that appear or disappear create or (after confirmation) remove stacks.
 
-### Outbound (Novaport to git)
+### Outbound (Swarmer to git)
 
-Every change made in the UI is a git commit. There is no state that exists only in Novaport.
+Every change made in the UI is a git commit. There is no state that exists only in Swarmer.
 
 - The editor always works against a base revision (the commit the user started from).
-- On save, Novaport fetches first. If the stack folder changed since the base, the save is
+- On save, Swarmer fetches first. If the stack folder changed since the base, the save is
   refused and the user sees a 3-way diff: base, the current branch, and their edit. They resolve it
-  in the editor and save again. Novaport never picks a winner silently.
-- If only other folders changed, Novaport rebases the commit and pushes.
-- With `edits: commit` the commit goes to the default branch. With `edits: pr` Novaport pushes a
+  in the editor and save again. Swarmer never picks a winner silently.
+- If only other folders changed, Swarmer rebases the commit and pushes.
+- With `edits: commit` the commit goes to the default branch. With `edits: pr` Swarmer pushes a
   branch and opens a pull request through the forge API.
-- Commit author is the logged-in user (name and email from OIDC). The committer is the Novaport
+- Commit author is the logged-in user (name and email from OIDC). The committer is the Swarmer
   service identity.
 
 ### Credentials
 
-Per repository: an SSH deploy key (generated by Novaport, public key shown for the user to add) or
+Per repository: an SSH deploy key (generated by Swarmer, public key shown for the user to add) or
 an HTTPS token. A forge API token is required for `edits: pr` and for update PRs.
 
 ## Secrets
@@ -256,7 +256,7 @@ Secrets are stored in git, encrypted with SOPS and age.
   in a pull request. Nobody can read existing values from the repository.
 - The server holds the age private key, provided as a Swarm secret. Admins can add their own age
   key as a second recipient for recovery.
-- In the UI, users with permission can view and edit decrypted values. Novaport re-encrypts and
+- In the UI, users with permission can view and edit decrypted values. Swarmer re-encrypts and
   commits.
 - A compose file uses a value through the standard `environment` secret source:
 
@@ -316,15 +316,15 @@ Updates that change git follow the normal path: new commit, new revision, then t
 mode decides. There is no separate update path that could drift from git.
 
 - `commit` updates of one stack found in the same check go into one commit, authored by the
-  Novaport service identity. `pr` updates get one pull request per service, on a branch named
-  `novaport/update-<stack>-<service>-<tag>`.
+  Swarmer service identity. `pr` updates get one pull request per service, on a branch named
+  `swarmer/update-<stack>-<service>-<tag>`.
 - Only the `image:` value is replaced, using the YAML parser's positions, so comments and
   formatting stay as they are.
 - Each service's last result is stored with the candidate it acted on, so the same update is not
   committed, proposed, or announced twice. A failed action (no forge token, the stack changed in
   git meanwhile) is retried on the next check.
 
-Checks run on a schedule (`NOVAPORT_UPDATE_INTERVAL`, six hours by default) and on demand from the
+Checks run on a schedule (`SWARMER_UPDATE_INTERVAL`, six hours by default) and on demand from the
 stack page, using the registry v2 API with the configured credentials. Manifest lookups use `HEAD`
 requests, which Docker Hub doesn't count against its pull limit, and tag lists and digests are
 cached for 15 minutes.
@@ -361,9 +361,9 @@ Roles are bound globally or per stack, to users or to groups. The highest applic
 - Nodes, networks, Swarm secrets and configs, and agent node views need a global role.
 - Group membership comes from a provider's groups claim (a dotted path such as
   `realm_access.roles` reaches nested claims) through per-provider mappings from claim values to
-  Novaport groups, and is synced on every login. Members added by hand are left alone. When the
-  ID token has no groups claim, Novaport asks the userinfo endpoint.
-- Novaport refuses changes that would leave no enabled user with the global admin role.
+  Swarmer groups, and is synced on every login. Members added by hand are left alone. When the
+  ID token has no groups claim, Swarmer asks the userinfo endpoint.
+- Swarmer refuses changes that would leave no enabled user with the global admin role.
 
 ### Audit log
 
@@ -377,11 +377,11 @@ append-only in the application.
 
 An hourly job deletes history past its retention:
 
-- Finished deployments and their logs after 90 days (`NOVAPORT_DEPLOYMENT_RETENTION`), keeping the
-  newest 20 per stack (`NOVAPORT_KEEP_DEPLOYMENTS`) however old they are.
+- Finished deployments and their logs after 90 days (`SWARMER_DEPLOYMENT_RETENTION`), keeping the
+  newest 20 per stack (`SWARMER_KEEP_DEPLOYMENTS`) however old they are.
 - Revisions after the same 90 days, unless a remaining deployment uses them, they are a stack's
   last good revision, or they are among the newest 20 of their stack. Git still has every commit.
-- Audit entries after a year (`NOVAPORT_AUDIT_RETENTION`).
+- Audit entries after a year (`SWARMER_AUDIT_RETENTION`).
 
 A retention of `0d` keeps everything.
 
@@ -411,15 +411,15 @@ Events:
 Each channel can subscribe to events globally or per stack.
 
 - Webhooks get a JSON body (`event`, `title`, `text`, `stack`, `link`, `data`, `at`) and, when the
-  channel has a signing secret, an `X-Novaport-Signature: sha256=<HMAC of the body>` header. URLs
+  channel has a signing secret, an `X-Swarmer-Signature: sha256=<HMAC of the body>` header. URLs
   and secrets are encrypted in the database, since webhook URLs often carry a token.
 - Slack channels post to an incoming webhook. Email uses the SMTP server configured with
-  `NOVAPORT_SMTP_*`; channels only hold the recipients.
+  `SWARMER_SMTP_*`; channels only hold the recipients.
 - Delivery happens in the background, so a slow endpoint never holds up a deploy. The last
   delivery time and error are shown per channel, and a test message can be sent from the UI.
 - Approval requests are announced once per deployment, whichever path created them. Drift is
   announced when the differences change, not on every check. Nodes and agents are announced when
-  they go down; outages already in place when Novaport starts are not.
+  they go down; outages already in place when Swarmer starts are not.
 
 ## Data model
 
@@ -452,14 +452,14 @@ Deployment status values: `pending`, `awaiting_approval`, `running`, `succeeded`
 
 ## Endpoints
 
-The Swarm or host Novaport runs on is the endpoint `local`. Other Docker hosts and Swarm clusters
+The Swarm or host Swarmer runs on is the endpoint `local`. Other Docker hosts and Swarm clusters
 are endpoints too, each with an agent that connects out to the server, so they need no open ports
-and can sit behind NAT. One Novaport manages any number of them.
+and can sit behind NAT. One Swarmer manages any number of them.
 
 - An admin adds an endpoint under Endpoints and gets an edge key: the server URL, the endpoint
   ID, and a secret, in one string. The server stores only a hash of the secret. A new key
   disconnects the agent using the old one.
-- The agent runs with `NOVAPORT_EDGE_KEY` set (`docker run` on a single host, a service on a
+- The agent runs with `SWARMER_EDGE_KEY` set (`docker run` on a single host, a service on a
   manager for a Swarm cluster). It opens a WebSocket to `/api/edge/connect` and reconnects with
   backoff when the connection drops. Use an `https://` server URL; the agent verifies the
   certificate.
@@ -468,7 +468,7 @@ and can sit behind NAT. One Novaport manages any number of them.
   agent socket that turn every connection into such a stream. The deploy pipeline, `docker
   compose`, `docker stack deploy`, drift checks, and restarts run against the endpoint's socket
   exactly as they do locally.
-- A stack picks its endpoint with `endpoint: <name>` in `novaport.yaml`. Unknown names are shown
+- A stack picks its endpoint with `endpoint: <name>` in `swarmer.yaml`. Unknown names are shown
   as a configuration error on the stack. Moving a stack to another endpoint does not remove it
   from the old one.
 - Endpoints that stacks still use can't be deleted. A disconnected endpoint fails deploys at the
@@ -483,12 +483,12 @@ cover the manager the agent runs on.
 
 ## Security notes
 
-- Access to the Docker socket is root on the host. Novaport's own access control and audit log are
+- Access to the Docker socket is root on the host. Swarmer's own access control and audit log are
   the main defense, so RBAC is enforced on every endpoint, including WebSocket upgrades.
 - The agent mounts the host filesystem read-only and only exposes the operations listed above.
   Path checks resolve symlinks and reject paths outside `/`.
 - CSRF protection on all state-changing requests. Strict CSP on the frontend: scripts only from
-  Novaport itself plus hashes of the inline bootstrap script in the built `index.html`, no
+  Swarmer itself plus hashes of the inline bootstrap script in the built `index.html`, no
   framing. Styles allow inline, which CodeMirror and xterm.js need.
 - Webhook payloads are verified before any work happens.
 - Git credentials, registry credentials, and the age key are never returned by the API.
@@ -519,12 +519,12 @@ cover the manager the agent runs on.
 
 ## Adopting existing stacks
 
-Swarm stacks and Compose projects that no Novaport stack deploys are listed under Stacks. For
-each, Novaport rebuilds a compose file from the running service or container specs: stack
+Swarm stacks and Compose projects that no Swarmer stack deploys are listed under Stacks. For
+each, Swarmer rebuilds a compose file from the running service or container specs: stack
 prefixes are removed from networks, volumes, secrets, and configs; secrets and configs become
 external references, since their values can't be read back; `$` is escaped; values Swarm fills
-in by default are left out. An admin reviews and edits the file, and Novaport commits it with a
-`novaport.yaml` (`deploy: manual` unless chosen otherwise) through the repository's usual edit
+in by default are left out. An admin reviews and edits the file, and Swarmer commits it with a
+`swarmer.yaml` (`deploy: manual` unless chosen otherwise) through the repository's usual edit
 mode. The first deploy updates the running stack in place, and when the file matches what runs,
 no task is replaced. When the file is committed as generated, its revision counts as the one
 running: the stack history gets an `adopt` entry and the running services become the baseline
@@ -532,11 +532,11 @@ for drift detection, without a deploy. An edited file shows as newer in git unti
 deployed.
 
 Environment values that look like passwords, keys, or tokens are moved to the stack's
-`secrets.env` (encrypted) when Novaport has an age key, and the compose file refers to them as
+`secrets.env` (encrypted) when Swarmer has an age key, and the compose file refers to them as
 `${NAME}`. The values are read from Docker again when the stack is committed, so they never
 pass through the browser.
 
-Novaport can adopt the stack it runs in. It recognizes it through its own container (the
+Swarmer can adopt the stack it runs in. It recognizes it through its own container (the
 hostname is the container ID), sets the server to update `start-first`, and suggests manual
 deploys. A deployment left `running` by a server that stopped after `docker stack deploy`
 finished is taken over by the next server, which watches the rollout to its end; one that
