@@ -1,0 +1,80 @@
+# Novaport on Docker Swarm, behind Traefik.
+#
+# Copy .env.example to .env next to this file and fill it in, create the data directories, then
+# deploy from this directory:
+#
+#   mkdir -p /data/novaport/data /data/novaport/postgres
+#   NOVAPORT_IMAGE=ghcr.io/denniedev/novaport:0.1.0 docker stack deploy -c docker-compose.yml novaport
+#
+# Traefik needs the swarm provider (v3) and an attachable overlay network named traefik:
+#
+#   docker network create -d overlay --attachable traefik
+
+services:
+
+  server:
+    image: ${NOVAPORT_IMAGE:-ghcr.io/denniedev/novaport:latest}
+    command: server
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/healthz')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      update_config:
+        order: stop-first
+      labels:
+        - traefik.enable=true
+        - traefik.swarm.network=traefik
+        - traefik.http.routers.novaport.rule=Host(`novaport.example.com`)
+        - traefik.http.routers.novaport.entrypoints=websecure
+        - traefik.http.routers.novaport.tls=true
+        - traefik.http.services.novaport.loadbalancer.server.port=8000
+    env_file: .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /data/novaport/data:/var/lib/novaport
+    networks:
+      - default
+      - agents
+      - traefik
+
+  agent:
+    image: ${NOVAPORT_IMAGE:-ghcr.io/denniedev/novaport:latest}
+    command: agent
+    deploy:
+      mode: global
+    env_file: .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /:/host:ro
+    networks:
+      - agents
+
+  postgres:
+    image: postgres:18-alpine
+    deploy:
+      placement:
+        # With more than one manager, pin the database to one node with a label instead.
+        constraints: [node.role == manager]
+    env_file: .env
+    environment:
+      POSTGRES_USER: novaport
+      POSTGRES_DB: novaport
+    volumes:
+      - /data/novaport/postgres:/var/lib/postgresql
+    networks:
+      - default
+
+networks:
+  default:
+    driver: overlay
+  agents:
+    driver: overlay
+    driver_opts:
+      encrypted: "true"
+  traefik:
+    external: true

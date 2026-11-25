@@ -14,8 +14,9 @@ definition.
 
 ## Running on Docker Swarm
 
-[deploy/stack.yml](deploy/stack.yml) runs the server, an agent on every node, and Postgres. The
-comments at the top list the secrets to create first.
+[deploy/docker-compose.yml](deploy/docker-compose.yml) runs the server, an agent on every node,
+and Postgres, behind Traefik. Settings and keys go in a `.env` file next to it; start from
+[deploy/.env.example](deploy/.env.example).
 
 The agent mounts the Docker socket and the host filesystem read-only. It answers only to the
 server (shared token, encrypted overlay network) and gives Novaport what a manager can't see on

@@ -2,24 +2,39 @@
 
 ## Installing
 
-[deploy/stack.yml](../deploy/stack.yml) runs the server on a manager, an agent on every node,
-and Postgres. The comments at its top list the Swarm secrets to create; then:
+[deploy/docker-compose.yml](../deploy/docker-compose.yml) runs the server on a manager, an
+agent on every node, and Postgres, behind Traefik. Copy
+[deploy/.env.example](../deploy/.env.example) to `.env` next to it, fill it in, create the data
+directories, and deploy from that directory:
 
 ```sh
-NOVAPORT_IMAGE=ghcr.io/denniedev/novaport:0.1.0 docker stack deploy -c stack.yml novaport
+mkdir -p /data/novaport/data /data/novaport/postgres
+NOVAPORT_IMAGE=ghcr.io/denniedev/novaport:0.1.0 docker stack deploy -c docker-compose.yml novaport
 ```
 
 Pin a version rather than `latest`, so a redeploy never upgrades by accident.
 
-Log in as `admin` with the password from `novaport_initial_admin_password`. That secret is only
-read while there are no users, so you can remove it from the stack afterwards.
+Log in as `admin` with the password from `NOVAPORT_INITIAL_ADMIN_PASSWORD`. It is only read
+while there are no users, so you can remove it afterwards.
 
-Novaport listens on port 8000 without TLS. Put it behind a proxy that terminates TLS and passes
-WebSocket upgrades (logs, terminals, and live updates use them), then set:
+Traefik reads the labels on the server service through its swarm provider (Traefik v3) and
+reaches it over the `traefik` network, which has to be an attachable overlay:
+
+```sh
+docker network create -d overlay --attachable traefik
+```
+
+Compose containers can join that network too. With another proxy, drop the labels and the
+`traefik` network. Novaport listens on port 8000 without TLS; the proxy has to terminate TLS and
+pass WebSocket upgrades (logs, terminals, and live updates use them). Set:
 
 - `NOVAPORT_PUBLIC_URL` to the external address, for OIDC redirect URIs and edge agent keys.
 - `NOVAPORT_TRUSTED_PROXIES` to the proxy's address or network, so client IPs in the audit log
-  come from `X-Forwarded-For`.
+  come from `X-Forwarded-For`. Swarm overlay networks use `10.0.0.0/8` unless the Swarm was set
+  up with another address pool.
+
+Anyone who can run `docker service inspect` can read the values in `.env`. To keep them out of
+the service spec, use Swarm secrets instead (see below).
 
 ## Configuration
 
@@ -85,7 +100,7 @@ Back up the database and keep copies of the two keys. Git checkouts don't need a
 With the stack file, Postgres runs on a manager. On that node:
 
 ```sh
-docker exec "$(docker ps -q -f name=novaport_db)" \
+docker exec "$(docker ps -q -f name=novaport_postgres)" \
   pg_dump -U novaport -Fc novaport > novaport-$(date +%F).dump
 ```
 
@@ -93,7 +108,7 @@ To restore, stop the server, restore, and start it again:
 
 ```sh
 docker service scale novaport_server=0
-docker exec -i "$(docker ps -q -f name=novaport_db)" \
+docker exec -i "$(docker ps -q -f name=novaport_postgres)" \
   pg_restore -U novaport -d novaport --clean --if-exists < novaport-2026-11-24.dump
 docker service scale novaport_server=1
 ```
@@ -105,7 +120,7 @@ A restored database needs the `NOVAPORT_SECRET_KEY` it was created with.
 Read the release notes, back up the database, and deploy the new version:
 
 ```sh
-NOVAPORT_IMAGE=ghcr.io/denniedev/novaport:0.2.0 docker stack deploy -c stack.yml novaport
+NOVAPORT_IMAGE=ghcr.io/denniedev/novaport:0.2.0 docker stack deploy -c docker-compose.yml novaport
 ```
 
 This updates the server and every agent together; keep them on the same version. The server
