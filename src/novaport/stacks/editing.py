@@ -347,8 +347,12 @@ class StackEditor:
         files: dict[str, str],
         user: User,
         message: str,
+        secrets: dict[str, str] | None = None,
     ) -> EditResult:
-        """Commit a new stack folder, the way edits to that stack would reach git."""
+        """Commit a new stack folder, the way edits to that stack would reach git.
+
+        `secrets` are written to the folder's secrets.env, encrypted.
+        """
         encoded: dict[str, bytes | None] = {check_path(p): c.encode() for p, c in files.items()}
         async with self.sessionmaker() as db:
             repo = await db.get(Repository, repository_id)
@@ -369,6 +373,10 @@ class StackEditor:
                 mirror = self._mirror(repo)
                 if await mirror.list_files(tip, stack.path):
                     raise EditError(f"{stack.path} already exists in {repo.name}.")
+                if secrets:
+                    encoded[SECRETS_FILE] = await self._encrypt(
+                        mirror, tip, f"{stack.path}/{SECRETS_FILE}", secrets
+                    )
                 await self._validate(mirror, stack, tip, encoded)
                 result = await self._publish(
                     db,
@@ -383,6 +391,18 @@ class StackEditor:
                 )
                 await db.commit()
                 return result
+
+    async def _encrypt(
+        self, mirror: GitMirror, tip: str, path: str, values: dict[str, str]
+    ) -> bytes:
+        recipient = self.sops.recipient
+        if recipient is None:
+            raise EditError("NOVAPORT_AGE_KEY is not set, so secrets can't be written.")
+        try:
+            sops_config = await mirror.read_file(tip, SOPS_CONFIG)
+            return await self.sops.encrypt(values, recipients_for(sops_config, path, recipient))
+        except SopsError as exc:
+            raise EditError(str(exc)) from exc
 
     async def read_compose(self, stack: Stack) -> tuple[str, str, str]:
         """Fetch and return (tip commit, compose file name, its content)."""

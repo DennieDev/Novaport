@@ -527,3 +527,14 @@ in by default are left out. An admin reviews and edits the file, and Novaport co
 `novaport.yaml` (`deploy: manual` unless chosen otherwise) through the repository's usual edit
 mode. The first deploy updates the running stack in place, and when the file matches what runs,
 no task is replaced.
+
+Environment values that look like passwords, keys, or tokens are moved to the stack's
+`secrets.env` (encrypted) when Novaport has an age key, and the compose file refers to them as
+`${NAME}`. The values are read from Docker again when the stack is committed, so they never
+pass through the browser.
+
+Novaport can adopt the stack it runs in. It recognizes it through its own container (the
+hostname is the container ID), sets the server to update `start-first`, and suggests manual
+deploys. A deployment left `running` by a server that stopped after `docker stack deploy`
+finished is taken over by the next server, which watches the rollout to its end; one that
+stopped earlier is marked failed.

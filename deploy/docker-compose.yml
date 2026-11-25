@@ -25,7 +25,9 @@ services:
       placement:
         constraints: [node.role == manager]
       update_config:
-        order: stop-first
+        # The old server keeps running until the new one is healthy, so a deploy of this
+        # stack started from Novaport itself completes. See docs/operations.md.
+        order: start-first
       labels:
         - traefik.enable=true
         - traefik.swarm.network=traefik

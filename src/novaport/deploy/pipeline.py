@@ -106,25 +106,66 @@ class Pipeline:
             deployment.status = DeploymentStatus.RUNNING
             deployment.started_at = datetime.now(UTC)
             await db.commit()
+            return await self._finish(db, deployment, self._deploy(db, deployment))
 
-            try:
-                await self._deploy(db, deployment)
-            except DeployFailed as exc:
-                await self._event(db, deployment, exc.stage, "error", str(exc))
-                deployment.status = DeploymentStatus.FAILED
-                deployment.error = str(exc)
-            except Exception as exc:
-                log.exception("Deployment %s crashed", deployment_id)
-                await self._event(db, deployment, deployment.stage or "?", "error", repr(exc))
-                deployment.status = DeploymentStatus.FAILED
-                deployment.error = f"Internal error: {exc}"
-            else:
-                deployment.status = DeploymentStatus.SUCCEEDED
-                deployment.stack.last_good_revision_id = deployment.revision_id
-            deployment.finished_at = datetime.now(UTC)
-            await db.commit()
-            self._announce(deployment)
-            return deployment.status
+    async def resume(self, deployment_id: uuid.UUID) -> DeploymentStatus | None:
+        """Finish a deployment whose server stopped after the stack was applied, as happens
+        when Novaport deploys the stack it runs in. Returns None when it can't be resumed
+        because it stopped earlier."""
+        async with self.sessionmaker() as db:
+            deployment = await db.get(
+                Deployment,
+                deployment_id,
+                options=[
+                    selectinload(Deployment.stack).selectinload(Stack.repository),
+                    selectinload(Deployment.stack).selectinload(Stack.endpoint),
+                    selectinload(Deployment.revision),
+                ],
+            )
+            if (
+                deployment is None
+                or deployment.status != DeploymentStatus.RUNNING
+                or deployment.stage != "converge"
+                or deployment.stack.type != StackType.SWARM
+            ):
+                return None
+            await self._event(
+                db,
+                deployment,
+                "converge",
+                "info",
+                "Novaport restarted; watching the rollout again.",
+            )
+            return await self._finish(db, deployment, self._watch(db, deployment))
+
+    async def _finish(
+        self, db: AsyncSession, deployment: Deployment, work: Awaitable[None]
+    ) -> DeploymentStatus:
+        try:
+            await work
+        except DeployFailed as exc:
+            await self._event(db, deployment, exc.stage, "error", str(exc))
+            deployment.status = DeploymentStatus.FAILED
+            deployment.error = str(exc)
+        except Exception as exc:
+            log.exception("Deployment %s crashed", deployment.id)
+            await self._event(db, deployment, deployment.stage or "?", "error", repr(exc))
+            deployment.status = DeploymentStatus.FAILED
+            deployment.error = f"Internal error: {exc}"
+        else:
+            deployment.status = DeploymentStatus.SUCCEEDED
+            deployment.stack.last_good_revision_id = deployment.revision_id
+        deployment.finished_at = datetime.now(UTC)
+        await db.commit()
+        self._announce(deployment)
+        return deployment.status
+
+    async def _watch(self, db: AsyncSession, deployment: Deployment) -> None:
+        target = self._target(deployment.stack)
+        started = deployment.started_at or datetime.now(UTC)
+        timeout = int(self.settings.deploy_timeout.total_seconds())
+        await self._converge(db, deployment, started, timeout, target.reader, target.agents)
+        await self._snapshot(deployment.stack, target.reader)
 
     def _announce(self, deployment: Deployment) -> None:
         if self.notify is None:
@@ -285,6 +326,8 @@ class Pipeline:
             await self._command(db, deployment, "apply", result)
 
         if stack.type == StackType.SWARM:
+            # Marks the point after which a restarted server can take this deployment over.
+            await self._event(db, deployment, "converge", "info", "Waiting for the rollout.")
             await self._converge(db, deployment, started, timeout, target.reader, target.agents)
             await self._remove_old_secrets(db, deployment, set(secret_names.values()), target)
             await self._snapshot(stack, target.reader)

@@ -138,6 +138,12 @@
 		<ul class="notes">
 			{#each generated.notes as note (note)}<li>{note}</li>{/each}
 		</ul>
+		{#if generated.secrets.length}
+			<p>
+				Goes to <code>secrets.env</code>, encrypted:
+				{#each generated.secrets as name, i (name)}{#if i}, {/if}<code>{name}</code>{/each}
+			</p>
+		{/if}
 		<form class="panel" onsubmit={adopt}>
 			<CodeEditor bind:value={compose} path="compose.yaml" />
 			<div class="grid">
@@ -163,6 +169,12 @@
 				Deploying the new stack replaces the running services with what this file describes.
 				Review it first; anything that differs is applied on the first deploy.
 			</p>
+			{#if generated.own && deploy === 'auto'}
+				<p class="warn">
+					Every change to this stack would restart Novaport, and a change that keeps it from
+					starting can only be fixed by hand.
+				</p>
+			{/if}
 			<p class="actions">
 				<button type="submit" disabled={busy || !repositoryId}>Commit to the repository</button>
 				<button type="button" onclick={() => (selected = undefined)}>Cancel</button>
@@ -173,6 +185,9 @@
 {#if error}<p class="error">{error}</p>{/if}
 
 <style>
+	.warn {
+		color: var(--warn);
+	}
 	.notes {
 		margin: 0 0 1rem;
 		padding-left: 1.2rem;

@@ -227,7 +227,8 @@ class Jobs:
                 return
             if status == DeploymentStatus.RUNNING:
                 # Nobody holds the stack lock, so whoever ran this is gone.
-                await self._mark_orphaned(deployment_id)
+                if await self.pipeline.resume(deployment_id) is None:
+                    await self._mark_orphaned(deployment_id)
                 return
             await self.pipeline.run(deployment_id)
         self.wake()

@@ -487,6 +487,8 @@ export interface UnmanagedStack {
 export interface GeneratedCompose {
 	compose: string;
 	notes: string[];
+	secrets: string[];
+	own: boolean;
 }
 
 export interface Mount {

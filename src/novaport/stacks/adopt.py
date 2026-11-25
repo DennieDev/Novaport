@@ -5,6 +5,7 @@ Docker doesn't keep the compose file a stack came from, so this works backwards 
 and container specs. The result is a starting point to review, not an exact copy.
 """
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -24,6 +25,63 @@ _OWN_LABEL_PREFIXES = ("com.docker.stack.", "com.docker.compose.", "novaport.")
 class Generated:
     compose: str
     notes: list[str] = field(default_factory=list)
+    # Environment values moved out of the compose file, which refers to them as ${NAME}.
+    secrets: dict[str, str] = field(default_factory=dict)
+
+
+_SECRET_NAME = re.compile(r"PASSWORD|PASSWD|SECRET|TOKEN|PRIVATE|CREDENTIAL|(^|_)(API_?)?KEY$")
+_URL_WITH_PASSWORD = re.compile(r"^[a-z][a-z0-9+.-]*://[^/@:\s]+:[^/@\s]+@", re.IGNORECASE)
+
+
+def looks_secret(name: str, value: str) -> bool:
+    """Whether an environment variable probably holds a password, key, or token."""
+    if not value or name.upper().endswith("_FILE"):
+        return False
+    return bool(_SECRET_NAME.search(name.upper()) or _URL_WITH_PASSWORD.match(value))
+
+
+@dataclass(frozen=True)
+class _Reference:
+    """An environment value replaced by a variable from secrets.env."""
+
+    name: str
+
+
+def extract_secrets(services: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
+    """Replace secret-looking environment values with references, in place.
+
+    Returns the values by name, and the names left in place because services set them to
+    different values.
+    """
+    found: dict[str, set[str]] = {}
+    for svc in services.values():
+        for name, value in (svc.get("environment") or {}).items():
+            if isinstance(value, str) and looks_secret(name, value):
+                found.setdefault(name, set()).add(value)
+    values = {name: next(iter(v)) for name, v in found.items() if len(v) == 1}
+    for svc in services.values():
+        env = svc.get("environment") or {}
+        for name in env:
+            if name in values:
+                env[name] = _Reference(name)
+    return dict(sorted(values.items())), sorted(set(found) - set(values))
+
+
+def _secrets_note(moved: Iterable[str], kept: Iterable[str]) -> list[str]:
+    notes = []
+    if moved:
+        notes.append(
+            "These values look like passwords, keys, or tokens, so they go to secrets.env, "
+            "encrypted with SOPS, and the compose file refers to them as ${NAME}: "
+            + ", ".join(moved)
+            + ". To keep one in the compose file instead, replace the reference with the value."
+        )
+    if kept:
+        notes.append(
+            "Services set these to different values, so they stay in the compose file. Rename "
+            "them per service and move them to secrets.env before committing: " + ", ".join(kept)
+        )
+    return notes
 
 
 def _own(label: str) -> bool:
@@ -101,6 +159,10 @@ class _Dumper(yaml.SafeDumper):
 _Dumper.add_representer(
     type(None), lambda dumper, _: dumper.represent_scalar("tag:yaml.org,2002:null", "")
 )
+_Dumper.add_representer(
+    _Reference,
+    lambda dumper, ref: dumper.represent_scalar("tag:yaml.org,2002:str", f"${{{ref.name}}}"),
+)
 
 
 def _escape(value: Any) -> Any:
@@ -166,8 +228,17 @@ def swarm_compose(
     stack: str,
     services: Iterable[Obj],
     networks: Iterable[Obj],
+    *,
+    move_secrets: bool = False,
+    start_first: Iterable[str] = (),
 ) -> Generated:
-    """A compose file for a Swarm stack from its services' specs."""
+    """A compose file for a Swarm stack from its services' specs.
+
+    With `move_secrets`, secret-looking environment values are taken out (see
+    `extract_secrets`). Services named in `start_first` (full names) get
+    `update_config.order: start-first`.
+    """
+    start_first = set(start_first)
     notes: list[str] = []
     network_by_id = {n.get("Id") or n.get("ID"): n for n in networks}
     top_networks: dict[str, Any] = {}
@@ -320,6 +391,8 @@ def swarm_compose(
                 "window": duration(restart.get("Window")),
             }
         deploy["update_config"] = _update_config(spec.get("UpdateConfig"))
+        if spec.get("Name") in start_first:
+            deploy["update_config"] = (deploy["update_config"] or {}) | {"order": "start-first"}
         deploy["rollback_config"] = _update_config(spec.get("RollbackConfig"))
         svc["deploy"] = deploy
 
@@ -335,7 +408,11 @@ def swarm_compose(
             "back. To manage them in git, put the values in secrets.env and use "
             "`environment:` instead of `external:`."
         )
-    if any(s.get("environment") for s in out.values()):
+    secrets: dict[str, str] = {}
+    if move_secrets:
+        secrets, kept = extract_secrets(out)
+        notes += _secrets_note(secrets, kept)
+    elif any(s.get("environment") for s in out.values()):
         notes.append(
             "Environment variables are copied as they are. Move passwords and tokens to "
             "secrets.env before committing."
@@ -347,10 +424,12 @@ def swarm_compose(
         secrets=top_secrets,
         configs=top_configs,
     )
-    return Generated(compose, notes)
+    return Generated(compose, notes, secrets)
 
 
-def compose_project(project: str, containers: Iterable[Obj]) -> Generated:
+def compose_project(
+    project: str, containers: Iterable[Obj], *, move_secrets: bool = False
+) -> Generated:
     """A compose file for a Compose project from its containers' inspect output."""
     notes: list[str] = []
     by_service: dict[str, list[Obj]] = {}
@@ -453,12 +532,16 @@ def compose_project(project: str, containers: Iterable[Obj]) -> Generated:
         "Environment variables and labels include those the image sets; remove the ones you "
         "didn't set yourself."
     )
-    if any(s.get("environment") for s in out.values()):
+    secrets: dict[str, str] = {}
+    if move_secrets:
+        secrets, kept = extract_secrets(out)
+        notes += _secrets_note(secrets, kept)
+    elif any(s.get("environment") for s in out.values()):
         notes.append(
             "Move passwords and tokens from `environment` to secrets.env before committing."
         )
     notes.append("Build sections and env files can't be recovered from running containers.")
-    return Generated(_dump(out, networks=top_networks, volumes=top_volumes), notes)
+    return Generated(_dump(out, networks=top_networks, volumes=top_volumes), notes, secrets)
 
 
 def stack_names(services: Iterable[Obj]) -> dict[str, int]:

@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+import re
+import socket
 import uuid
 from typing import Literal
 
@@ -8,7 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from novaport.docker.client import DockerUnavailable, NotSwarmManager
+from novaport.docker.client import ClusterReader, DockerUnavailable, NotFound, NotSwarmManager
 from novaport.docker.views import STACK_LABEL
 from novaport.edge.hub import EndpointOffline, Target, Targets
 from novaport.locks import LockTimeout
@@ -43,6 +45,10 @@ class Unmanaged(BaseModel):
 class GeneratedOut(BaseModel):
     compose: str
     notes: list[str]
+    # Names of the values that go to secrets.env when the stack is added; never the values.
+    secrets: list[str]
+    # The stack Novaport itself runs in.
+    own: bool
 
 
 class AdoptIn(BaseModel):
@@ -119,7 +125,31 @@ async def unmanaged(request: Request, db: DB, _: ViewerAccess) -> list[Unmanaged
     return sorted(result, key=lambda u: (u.endpoint or "", u.name, u.type))
 
 
-async def _generate(target: Target, kind: Kind, name: str) -> Generated:
+SWARM_SERVICE_LABEL = "com.docker.swarm.service.name"
+OWN_STACK_NOTE = (
+    "This is the stack Novaport itself runs in. Deploying it restarts Novaport: the server "
+    "is set to start its replacement before stopping, and the new server finishes the "
+    "deployment. Keep the files you installed Novaport with, so you can deploy it by hand if "
+    "a change ever keeps it from starting. Deploying only when asked is the safer choice here."
+)
+
+
+async def own_service(reader: ClusterReader) -> tuple[str, str] | None:
+    """The Swarm stack and service this server runs as, found through its own container,
+    whose ID Docker uses as the hostname."""
+    try:
+        container = await reader.container(socket.gethostname())
+    except (NotFound, DockerUnavailable):
+        return None
+    labels = (container.get("Config") or {}).get("Labels") or {}
+    stack, service = labels.get(STACK_LABEL), labels.get(SWARM_SERVICE_LABEL)
+    return (stack, service) if stack and service else None
+
+
+async def _generate(
+    target: Target, kind: Kind, name: str, *, local: bool, move_secrets: bool
+) -> tuple[Generated, bool]:
+    """The compose file for a running stack, and whether it is Novaport's own."""
     reader = target.reader
     if reader is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No Docker connection.")
@@ -127,11 +157,23 @@ async def _generate(target: Target, kind: Kind, name: str) -> Generated:
         services = await reader.services(label=f"{STACK_LABEL}={name}")
         if not services:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "No such stack.")
-        return swarm_compose(name, services, await reader.networks())
+        own = await own_service(reader) if local else None
+        is_own = own is not None and own[0] == name
+        generated = swarm_compose(
+            name,
+            services,
+            await reader.networks(),
+            move_secrets=move_secrets,
+            start_first=[own[1]] if own and is_own else [],
+        )
+        if is_own:
+            generated.notes.insert(0, OWN_STACK_NOTE)
+        return generated, is_own
     listed = await reader.containers(f"{COMPOSE_PROJECT}={name}")
     if not listed:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such Compose project.")
-    return compose_project(name, [await reader.container(c["Id"]) for c in listed])
+    containers = [await reader.container(c["Id"]) for c in listed]
+    return compose_project(name, containers, move_secrets=move_secrets), False
 
 
 @router.get("/unmanaged/{kind}/{name}")
@@ -141,11 +183,24 @@ async def generate(
     request: Request,
     db: DB,
     _: AdminAccess,
+    editor: Editor,
     endpoint: str | None = Query(default=None),
 ) -> GeneratedOut:
-    """A compose file rebuilt from what runs, as a starting point for adding the stack."""
-    generated = await _generate(await _target(db, request, endpoint), kind, name)
-    return GeneratedOut(compose=generated.compose, notes=generated.notes)
+    """A compose file rebuilt from what runs, as a starting point for adding the stack.
+
+    When Novaport has an age key, values that look like passwords, keys, or tokens are
+    replaced by `${NAME}` and go to the stack's encrypted secrets.env on adoption.
+    """
+    generated, own = await _generate(
+        await _target(db, request, endpoint),
+        kind,
+        name,
+        local=endpoint is None,
+        move_secrets=editor.sops.recipient is not None,
+    )
+    return GeneratedOut(
+        compose=generated.compose, notes=generated.notes, secrets=list(generated.secrets), own=own
+    )
 
 
 @router.post("/unmanaged/{kind}/{name}/adopt", response_model=SaveResult)
@@ -167,8 +222,19 @@ async def adopt(
     repo = await db.get(Repository, body.repository_id)
     if repo is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Repository not found.")
-    if endpoint is not None:
-        await _target(db, request, endpoint)
+    target = await _target(db, request, endpoint)
+
+    secrets: dict[str, str] = {}
+    if editor.sops.recipient is not None:
+        # Read again rather than sent by the browser, so the values never leave the server.
+        generated, _ = await _generate(
+            target, kind, name, local=endpoint is None, move_secrets=True
+        )
+        secrets = {
+            k: v
+            for k, v in generated.secrets.items()
+            if re.search(rf"\$\{{{re.escape(k)}\}}", body.compose)
+        }
 
     stack_type = StackType(kind)
     settings: dict[str, str] = {"deploy": body.deploy.value}
@@ -180,7 +246,12 @@ async def adopt(
         "compose.yaml": body.compose,
         SETTINGS_FILE: yaml.safe_dump(settings, sort_keys=False),
     }
-    details: dict[str, object] = {"repository": repo.name, "type": kind, "endpoint": endpoint}
+    details: dict[str, object] = {
+        "repository": repo.name,
+        "type": kind,
+        "endpoint": endpoint,
+        "secrets": sorted(secrets),
+    }
     try:
         result = await editor.add_stack(
             repo.id,
@@ -189,6 +260,7 @@ async def adopt(
             files,
             access.user,
             body.message or f"Add {name}",
+            secrets=secrets,
         )
     except EditConflict as exc:
         return conflict_response(exc)

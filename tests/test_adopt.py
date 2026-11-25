@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+import socket
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -12,8 +13,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from novaport.models import AuditEntry, Stack
 from novaport.server.app import create_app
-from novaport.stacks.adopt import compose_project, duration, size, swarm_compose
-from tests.conftest import client_for, make_settings
+from novaport.sops import Sops, generate_age_key
+from novaport.stacks.adopt import compose_project, duration, looks_secret, size, swarm_compose
+from tests.conftest import SOPS_BINARY, client_for, make_settings
 from tests.fakes import FakeReader
 from tests.gitrepo import Repo
 from tests.test_pipeline import FakeCli
@@ -291,3 +293,141 @@ async def test_adopting_a_compose_project_sets_its_type(
         "deploy": "auto",
         "type": "compose",
     }
+
+
+def test_secret_looking_variables() -> None:
+    for name, value in [
+        ("POSTGRES_PASSWORD", "x"),
+        ("NOVAPORT_SECRET_KEY", "x"),
+        ("NOVAPORT_AGE_KEY", "x"),
+        ("API_KEY", "x"),
+        ("GITHUB_TOKEN", "x"),
+        ("DATABASE_URL", "postgresql://app:hunter2@db/app"),
+    ]:
+        assert looks_secret(name, value), name
+    for name, value in [
+        ("POSTGRES_PASSWORD_FILE", "/run/secrets/pw"),
+        ("POSTGRES_PASSWORD", ""),
+        ("KEYBOARD", "us"),
+        ("PUBLIC_URL", "https://example.com"),
+        ("DATABASE_URL", "postgresql://db/app"),
+    ]:
+        assert not looks_secret(name, value), name
+
+
+def _service(name: str, env: list[str], order: str = "stop-first") -> dict[str, Any]:
+    return {
+        "Spec": {
+            "Name": f"app_{name}",
+            "Labels": {"com.docker.stack.namespace": "app"},
+            "TaskTemplate": {"ContainerSpec": {"Image": "app:1", "Env": env}},
+            "UpdateConfig": {"Order": order},
+        }
+    }
+
+
+def test_secrets_move_out_of_the_compose_file() -> None:
+    generated = swarm_compose(
+        "app",
+        [
+            _service("server", ["SECRET_KEY=s$cret", "TOKEN=one", "MODE=prod"]),
+            _service("worker", ["SECRET_KEY=s$cret", "TOKEN=two"]),
+        ],
+        [],
+        move_secrets=True,
+        start_first=["app_server"],
+    )
+    services = yaml.safe_load(generated.compose)["services"]
+    assert services["server"]["environment"] == {
+        "SECRET_KEY": "${SECRET_KEY}",
+        "TOKEN": "one",
+        "MODE": "prod",
+    }
+    assert services["worker"]["environment"]["SECRET_KEY"] == "${SECRET_KEY}"
+    assert generated.secrets == {"SECRET_KEY": "s$cret"}
+    assert any("TOKEN" in n and "different values" in n for n in generated.notes)
+    assert services["server"]["deploy"]["update_config"] == {"order": "start-first"}
+    assert "deploy" not in services["worker"]
+
+
+def test_secrets_stay_without_an_age_key() -> None:
+    generated = swarm_compose("app", [_service("server", ["SECRET_KEY=x"])], [])
+    assert generated.secrets == {}
+    assert yaml.safe_load(generated.compose)["services"]["server"]["environment"] == {
+        "SECRET_KEY": "x"
+    }
+
+
+OWN_SERVICES = [
+    {
+        "ID": "np1",
+        "Spec": {
+            **_service("server", ["NOVAPORT_SECRET_KEY=k3y", "NOVAPORT_LOG_LEVEL=info"])["Spec"],
+            "Name": "novaport_server",
+            "Labels": {"com.docker.stack.namespace": "novaport"},
+        },
+    }
+]
+
+
+@pytest.fixture
+async def own_app(
+    clean_db: str, tmp_path: Path
+) -> AsyncIterator[tuple[httpx.AsyncClient, Repo, Sops]]:
+    """Novaport running in the stack `novaport`, with an age key."""
+    age_key = generate_age_key()
+    origin = Repo(tmp_path / "origin")
+    origin.write("README.md", "infra")
+    origin.commit("Start")
+    reader = FakeReader()
+    reader.service_list = OWN_SERVICES
+    reader.container_inspect = {
+        socket.gethostname(): {
+            "Config": {
+                "Labels": {
+                    "com.docker.stack.namespace": "novaport",
+                    "com.docker.swarm.service.name": "novaport_server",
+                }
+            }
+        }
+    }
+    settings = make_settings(
+        database_url=SecretStr(clean_db),
+        initial_admin_password=SecretStr(PASSWORD),
+        age_key=SecretStr(age_key),
+        sops_binary=SOPS_BINARY or "sops",
+    )
+    async for client in client_for(create_app(settings, reader=reader, cli=FakeCli())):
+        await client.post("/api/auth/login", json={"username": "admin", "password": PASSWORD})
+        response = await client.post(
+            "/api/repositories", json={"name": "infra", "url": origin.url, "poll_interval": 0}
+        )
+        await client.post(f"/api/repositories/{response.json()['id']}/sync")
+        yield client, origin, Sops(SOPS_BINARY or "sops", age_key)
+
+
+@pytest.mark.postgres
+@pytest.mark.sops
+async def test_adopting_novaport_itself_keeps_its_secrets_out_of_git(
+    own_app: tuple[httpx.AsyncClient, Repo, Sops],
+) -> None:
+    client, origin, sops = own_app
+    generated = (await client.get("/api/unmanaged/swarm/novaport")).json()
+    assert generated["own"] is True
+    assert generated["secrets"] == ["NOVAPORT_SECRET_KEY"]
+    assert "k3y" not in generated["compose"]
+    assert "Novaport itself runs in" in generated["notes"][0]
+    server = yaml.safe_load(generated["compose"])["services"]["server"]
+    assert server["deploy"]["update_config"]["order"] == "start-first"
+
+    repos = (await client.get("/api/repositories")).json()
+    response = await client.post(
+        "/api/unmanaged/swarm/novaport/adopt",
+        json={"repository_id": repos[0]["id"], "compose": generated["compose"]},
+    )
+    assert response.status_code == 200, response.text
+
+    assert "k3y" not in origin.show("stacks/novaport/compose.yaml")
+    encrypted = origin.show("stacks/novaport/secrets.env")
+    assert "k3y" not in encrypted
+    assert await sops.decrypt(encrypted.encode()) == {"NOVAPORT_SECRET_KEY": "k3y"}

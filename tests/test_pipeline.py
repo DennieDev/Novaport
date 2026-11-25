@@ -333,6 +333,7 @@ async def test_worker_runs_pending_and_fails_orphaned(env: Env) -> None:
         d = await db.get(Deployment, deployment_id)
         assert d is not None
         d.status = DeploymentStatus.RUNNING
+        d.stage = "apply"
         await db.commit()
     await jobs.run_deployments()
     await asyncio.gather(*jobs._deploying.values())
@@ -340,6 +341,44 @@ async def test_worker_runs_pending_and_fails_orphaned(env: Env) -> None:
     assert orphan.status == DeploymentStatus.FAILED
     assert orphan.error is not None
     assert "stopped while this deployment was running" in orphan.error
+
+
+async def test_worker_resumes_a_deployment_that_was_converging(env: Env) -> None:
+    """The server that applied the stack was replaced by the deploy, as when Novaport
+    deploys its own stack."""
+    deployment_id = await env.setup()
+    async with env.maker() as db:
+        d = await db.get(Deployment, deployment_id)
+        assert d is not None
+        d.status = DeploymentStatus.RUNNING
+        d.stage = "converge"
+        d.started_at = datetime.now(UTC)
+        await db.commit()
+
+    jobs = Jobs(env.engine, env.maker, env.syncer, env.pipeline)
+    await jobs.run_deployments()
+    await asyncio.gather(*jobs._deploying.values())
+
+    d = await env.deployment(deployment_id)
+    assert d.status == DeploymentStatus.SUCCEEDED
+    assert d.stack.last_good_revision_id == d.revision_id
+    assert env.cli.calls == []
+    messages = [e.message for e in d.events]
+    assert messages[0] == "Novaport restarted; watching the rollout again."
+    assert messages[-1] == "All services are running."
+
+
+async def test_resumed_rollout_can_still_fail(env: Env) -> None:
+    deployment_id = await env.setup()
+    env.reader.service_list[0]["ServiceStatus"] = {"RunningTasks": 0, "DesiredTasks": 1}
+    async with env.maker() as db:
+        d = await db.get(Deployment, deployment_id)
+        assert d is not None
+        d.status = DeploymentStatus.RUNNING
+        d.stage = "converge"
+        d.started_at = datetime.now(UTC)
+        await db.commit()
+    assert await env.pipeline.resume(deployment_id) == DeploymentStatus.FAILED
 
 
 async def test_missing_bind_mount_stops_before_apply(env: Env) -> None:
