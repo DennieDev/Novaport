@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/dennielabs/swarmer"
+Repository = "https://github.com/DennieDev/swarmer"
 
 [project.scripts]
 swarmer = "swarmer.cli:main"

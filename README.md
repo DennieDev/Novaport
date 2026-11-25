@@ -32,7 +32,7 @@ command that starts the agent:
 ```sh
 docker run -d --name swarmer-agent --restart always \
   -v /var/run/docker.sock:/var/run/docker.sock -v /:/host:ro \
-  -e SWARMER_EDGE_KEY=... ghcr.io/dennielabs/swarmer:latest agent
+  -e SWARMER_EDGE_KEY=... ghcr.io/denniedev/swarmer:latest agent
 ```
 
 The host needs no open ports, only a way to reach Swarmer. Point a stack at the endpoint in its
@@ -192,7 +192,7 @@ the Playwright suite against it.
 
 Set the version in `pyproject.toml` (for example `0.2.0`, or `0.2.0rc1` for a pre-release), run
 `uv lock`, commit, and push a matching tag (`v0.2.0`, or `v0.2.0-rc.1`). The release workflow runs
-CI, publishes `ghcr.io/dennielabs/swarmer` for amd64 and arm64, and creates the GitHub release.
+CI, publishes `ghcr.io/denniedev/swarmer` for amd64 and arm64, and creates the GitHub release.
 Pre-releases don't move `latest`.
 
 ## License

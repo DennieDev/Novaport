@@ -9,7 +9,7 @@ directories, and deploy from that directory:
 
 ```sh
 mkdir -p /data/swarmer/data /data/swarmer/postgres
-SWARMER_IMAGE=ghcr.io/dennielabs/swarmer:0.1.0 docker stack deploy -c docker-compose.yml swarmer
+SWARMER_IMAGE=ghcr.io/denniedev/swarmer:0.1.0 docker stack deploy -c docker-compose.yml swarmer
 ```
 
 Pin a version rather than `latest`, so a redeploy never upgrades by accident.
@@ -158,7 +158,7 @@ A restored database needs the `SWARMER_SECRET_KEY` it was created with.
 Read the release notes, back up the database, and deploy the new version:
 
 ```sh
-SWARMER_IMAGE=ghcr.io/dennielabs/swarmer:0.2.0 docker stack deploy -c docker-compose.yml swarmer
+SWARMER_IMAGE=ghcr.io/denniedev/swarmer:0.2.0 docker stack deploy -c docker-compose.yml swarmer
 ```
 
 This updates the server and every agent together; keep them on the same version. The server

@@ -29,7 +29,7 @@ router = APIRouter(
 )
 ws_router = APIRouter(prefix="/api", tags=["endpoints"])
 
-IMAGE = "ghcr.io/dennielabs/swarmer:latest"
+IMAGE = "ghcr.io/denniedev/swarmer:latest"
 HELLO_TIMEOUT = 15.0
 
 

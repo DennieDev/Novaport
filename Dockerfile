@@ -52,7 +52,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     SWARMER_STATIC_DIR=/app/static
 
 LABEL org.opencontainers.image.title="Swarmer" \
-      org.opencontainers.image.source="https://github.com/dennielabs/swarmer" \
+      org.opencontainers.image.source="https://github.com/DennieDev/swarmer" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
 EXPOSE 8000

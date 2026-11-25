@@ -118,7 +118,7 @@ the socket is connected, those pages poll only every two minutes as a fallback. 
 
 ### Image
 
-One image, `ghcr.io/dennielabs/swarmer`, containing the application, the docker CLI, the compose
+One image, `ghcr.io/denniedev/swarmer`, containing the application, the docker CLI, the compose
 plugin, `git`, and `sops`.
 
 ## Repository layout

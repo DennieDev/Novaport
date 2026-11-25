@@ -4,7 +4,7 @@
 # deploy from this directory:
 #
 #   mkdir -p /data/swarmer/data /data/swarmer/postgres
-#   SWARMER_IMAGE=ghcr.io/dennielabs/swarmer:0.1.0 docker stack deploy -c docker-compose.yml swarmer
+#   SWARMER_IMAGE=ghcr.io/denniedev/swarmer:0.1.0 docker stack deploy -c docker-compose.yml swarmer
 #
 # Traefik needs the swarm provider (v3) and an attachable overlay network named traefik:
 #
@@ -13,7 +13,7 @@
 services:
 
   server:
-    image: ${SWARMER_IMAGE:-ghcr.io/dennielabs/swarmer:latest}
+    image: ${SWARMER_IMAGE:-ghcr.io/denniedev/swarmer:latest}
     command: server
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/healthz')"]
@@ -45,7 +45,7 @@ services:
       - traefik
 
   agent:
-    image: ${SWARMER_IMAGE:-ghcr.io/dennielabs/swarmer:latest}
+    image: ${SWARMER_IMAGE:-ghcr.io/denniedev/swarmer:latest}
     command: agent
     deploy:
       mode: global
