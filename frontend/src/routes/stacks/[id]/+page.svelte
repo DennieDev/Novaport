@@ -1,14 +1,15 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, errorMessage } from '#lib/api.ts';
 	import Badge from '#lib/components/Badge.svelte';
+	import DeployProgress from '#lib/components/DeployProgress.svelte';
 	import DeploymentRow from '#lib/components/DeploymentRow.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import ImageUpdates from '#lib/components/ImageUpdates.svelte';
 	import StackServices from '#lib/components/StackServices.svelte';
 	import Status from '#lib/components/Status.svelte';
+	import { isActive } from '#lib/deploy.ts';
 	import { ago } from '#lib/format.ts';
 	import { onStack, STACK_TOPICS } from '#lib/live.svelte.ts';
 	import { poll } from '#lib/poll.svelte.ts';
@@ -56,6 +57,25 @@
 	let error = $state<string | undefined>();
 	let busy = $state(false);
 
+	// The deployment shown above the services: one that is under way, or the last one watched
+	// here until it is closed.
+	let watching = $state<string | undefined>();
+	const active = $derived(deployments.data?.find((d) => isActive(d.status)));
+	$effect(() => {
+		if (active && active.id !== watching) watching = active.id;
+	});
+
+	const ROLLOUT_REFRESH_MS = 2000;
+	$effect(() => {
+		if (!active) return;
+		const timer = setInterval(() => containers.refresh(), ROLLOUT_REFRESH_MS);
+		return () => {
+			clearInterval(timer);
+			containers.refresh();
+			stack.refresh();
+		};
+	});
+
 	async function deploy(revision?: Revision) {
 		const s = stack.data;
 		if (!s) return;
@@ -67,7 +87,8 @@
 			const d = await api.post<Deployment>(`/stacks/${id}/deploy`, {
 				revision_id: revision?.id ?? null
 			});
-			await goto(`/deployments/${d.id}`);
+			watching = d.id;
+			await deployments.refresh();
 		} catch (e) {
 			error = errorMessage(e);
 		} finally {
@@ -119,7 +140,7 @@
 				<button
 					class="primary"
 					onclick={() => deploy()}
-					disabled={busy || !s.latest_revision || !!s.removed_at}
+					disabled={busy || !!active || !s.latest_revision || !!s.removed_at}
 				>
 					<Icon name="deploy" size={14} />Deploy latest
 				</button>
@@ -182,6 +203,16 @@
 			</div>
 		{/if}
 	</div>
+
+	{#if watching}
+		{#key watching}
+			<DeployProgress
+				id={watching}
+				operator={can('operator', s.id)}
+				ondismiss={() => (watching = undefined)}
+			/>
+		{/key}
+	{/if}
 
 	{#if s.drift?.length}
 		<div class="panel drift">

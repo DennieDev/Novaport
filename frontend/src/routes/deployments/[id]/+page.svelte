@@ -7,6 +7,7 @@
 	import { ago } from '#lib/format.ts';
 	import { onRow } from '#lib/live.svelte.ts';
 	import { poll } from '#lib/poll.svelte.ts';
+	import { STAGES, stageState } from '#lib/deploy.ts';
 	import { can } from '#lib/session.svelte.ts';
 	import type { DeploymentDetail } from '#lib/types.ts';
 
@@ -18,17 +19,6 @@
 
 	let error = $state<string | undefined>();
 	let busy = $state(false);
-
-	const stages = ['resolve', 'validate', 'preflight', 'apply', 'converge'];
-
-	function stageState(d: DeploymentDetail, stage: string): string {
-		const current = d.stage ? stages.indexOf(d.stage) : -1;
-		const index = stages.indexOf(stage);
-		if (d.status === 'succeeded') return 'done';
-		if (index < current) return 'done';
-		if (index === current) return d.status === 'failed' ? 'failed' : 'active';
-		return 'todo';
-	}
 
 	async function act(action: 'approve' | 'cancel') {
 		busy = true;
@@ -82,7 +72,7 @@
 	{/if}
 
 	<ol class="stages">
-		{#each stages as stage (stage)}
+		{#each STAGES as stage (stage)}
 			<li class={stageState(d, stage)}>{stage}</li>
 		{/each}
 	</ol>

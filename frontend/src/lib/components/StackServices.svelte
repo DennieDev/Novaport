@@ -41,15 +41,22 @@
 		).length;
 	}
 
+	function updating(s: ServiceRow): boolean {
+		return ['updating', 'rollback_started'].includes(s.update_status?.state ?? '');
+	}
+
 	function isOpen(s: ServiceRow): boolean {
 		return (
 			toggled[s.full_name] ??
-			(data.services.length === 1 || !healthy(s) || recentFailures(s) > 0)
+			(data.services.length === 1 || !healthy(s) || recentFailures(s) > 0 || updating(s))
 		);
 	}
 
+	// Tasks being replaced still run until Swarm stops them, so they count as running.
 	function shown(s: ServiceRow): ContainerRow[] {
-		return onlyRunning ? s.containers.filter((c) => c.current) : s.containers;
+		return onlyRunning
+			? s.containers.filter((c) => c.current || c.state === 'running')
+			: s.containers;
 	}
 
 	function scheduling(s: ServiceRow): string {
