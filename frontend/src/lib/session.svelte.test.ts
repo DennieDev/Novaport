@@ -6,7 +6,16 @@ import type { Me } from './types';
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 function user(global_role: Me['global_role'], stack_roles: Me['stack_roles'] = {}): Me {
-	return { id: 'u', username: 'u', name: null, email: null, local: true, global_role, stack_roles };
+	return {
+		id: 'u',
+		username: 'u',
+		name: null,
+		email: null,
+		local: true,
+		global_role,
+		stack_roles,
+		token: null
+	};
 }
 
 beforeEach(() => {

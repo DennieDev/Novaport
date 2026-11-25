@@ -9,6 +9,23 @@ export interface Me {
 	local: boolean;
 	global_role: Role | null;
 	stack_roles: Record<string, Role>;
+	token: string | null;
+}
+
+export interface ApiToken {
+	id: string;
+	name: string;
+	prefix: string;
+	role: Role;
+	username: string;
+	created_at: string;
+	expires_at: string | null;
+	last_used_at: string | null;
+	last_used_ip: string | null;
+}
+
+export interface ApiTokenCreated extends ApiToken {
+	token: string;
 }
 
 export interface ProviderLink {

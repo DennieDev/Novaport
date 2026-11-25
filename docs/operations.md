@@ -79,6 +79,23 @@ forge:
 
 Requests with a wrong signature get a 401 and are ignored.
 
+## API tokens
+
+Scripts use the same API as the UI, authenticated with a token instead of a login. Create one
+under Account, API tokens, and send it as a bearer token:
+
+```sh
+curl -H "Authorization: Bearer np_..." https://novaport.example.com/api/stacks
+```
+
+A token acts as the user who created it, with no role higher than the one picked for it. Every
+action is in the audit log under that user, with the token's name. Tokens can't open terminals,
+create other tokens, or change a password; those need a login. A token stops working when it
+expires, is revoked, or its user is disabled. Admins see and revoke everyone's tokens under
+Access, API tokens.
+
+The API is described at `/api/docs`.
+
 ## Keys
 
 Three keys matter, and only the first is in the database:

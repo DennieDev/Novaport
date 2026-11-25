@@ -59,6 +59,7 @@ from novaport.server.api import live as live_api
 from novaport.server.api import notifications as notifications_api
 from novaport.server.api import registries as registries_api
 from novaport.server.api import restart as restart_api
+from novaport.server.api import tokens as tokens_api
 from novaport.server.api import updates as updates_api
 from novaport.server.origin import SAFE_METHODS, SameOriginMiddleware
 from novaport.server.security import (
@@ -106,7 +107,7 @@ def _install_error_handlers(app: FastAPI) -> None:
                     outcome=Outcome.DENIED,
                     target=exc.target,
                     stack_id=exc.stack_id,
-                    details={"method": request.method, "path": request.url.path},
+                    details=access.with_token({"method": request.method, "path": request.url.path}),
                 )
                 await db.commit()
         return _error(status.HTTP_403_FORBIDDEN, str(exc))
@@ -289,6 +290,7 @@ def create_app(
 
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(tokens_api.router)
     app.include_router(access_api.router)
     app.include_router(cluster.router)
     app.include_router(cluster.ws_router)

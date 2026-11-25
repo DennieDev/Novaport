@@ -28,7 +28,7 @@ from novaport.auth.users import (
 )
 from novaport.crypto import Cipher, MissingSecretKey
 from novaport.models import LoginState, OidcProvider, Outcome, Role, User
-from novaport.server.deps import DB, CurrentAccess, client_ip, get_settings
+from novaport.server.deps import DB, CurrentAccess, SessionAccess, client_ip, get_settings
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +57,8 @@ class Me(BaseModel):
     local: bool
     global_role: Role | None
     stack_roles: dict[uuid.UUID, Role]
+    # Set when the request came with an API token; the roles above are then capped by it.
+    token: str | None = None
 
 
 class ProviderLink(BaseModel):
@@ -160,7 +162,7 @@ async def logout(request: Request, response: Response, db: DB) -> None:
 
 @router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
 async def change_password(
-    body: PasswordChange, request: Request, db: DB, access: CurrentAccess
+    body: PasswordChange, request: Request, db: DB, access: SessionAccess
 ) -> None:
     """Change your own password. Your other sessions are logged out."""
     user = await db.get(User, access.user.id)
@@ -190,6 +192,7 @@ async def me(access: CurrentAccess) -> Me:
         local=user.is_local,
         global_role=access.global_role,
         stack_roles=dict(access.stack_roles),
+        token=access.token,
     )
 
 

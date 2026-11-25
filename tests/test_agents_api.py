@@ -232,3 +232,25 @@ def test_exec_is_audited(ws_client: tuple[TestClient, FakeAgents]) -> None:
     with client.websocket_connect("/api/tasks/task1/exec") as ws:
         assert ws.receive_text() == "bye"
     assert asyncio.run(_terminal_audit(TEST_DATABASE_URL)) == [("admin", "success")]
+
+
+@pytest.mark.postgres
+def test_api_tokens_cannot_open_terminals(ws_client: tuple[TestClient, FakeAgents]) -> None:
+    assert TEST_DATABASE_URL
+    client, agents = ws_client
+    _login(client)
+    created = client.post("/api/tokens", json={"name": "script", "role": "admin"})
+    assert created.status_code == 201
+    client.cookies.clear()
+    headers = {"Authorization": f"Bearer {created.json()['token']}"}
+
+    with client.websocket_connect("/api/tasks/task1/logs/follow", headers=headers) as ws:
+        assert ws.receive_text() == "hello\n"
+    with (
+        pytest.raises(WebSocketDisconnect) as exc,
+        client.websocket_connect("/api/tasks/task1/exec", headers=headers) as ws,
+    ):
+        ws.receive_text()
+    assert exc.value.code == 1008
+    assert len(agents.socket_paths) == 1
+    assert asyncio.run(_terminal_audit(TEST_DATABASE_URL)) == [("admin", "denied")]

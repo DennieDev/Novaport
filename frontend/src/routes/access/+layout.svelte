@@ -9,7 +9,8 @@
 		{ href: '/access', label: 'Users' },
 		{ href: '/access/groups', label: 'Groups' },
 		{ href: '/access/bindings', label: 'Roles' },
-		{ href: '/access/providers', label: 'Login providers' }
+		{ href: '/access/providers', label: 'Login providers' },
+		{ href: '/access/tokens', label: 'API tokens' }
 	];
 </script>
 

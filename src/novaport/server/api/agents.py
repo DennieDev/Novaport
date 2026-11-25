@@ -20,12 +20,14 @@ from novaport.docker.client import ClusterReader, DockerUnavailable, NotFound
 from novaport.models import Outcome, Role
 from novaport.server.deps import (
     DB,
+    TERMINAL_ACTION,
     CurrentAccess,
     OperatorAccess,
     Reader,
     ViewerAccess,
     current_user,
     get_reader,
+    refuse_token_terminal,
     require_service_role,
     websocket_access,
 )
@@ -202,6 +204,7 @@ async def _proxy_task_socket(
     reader = get_reader(websocket)
     maker = websocket.app.state.sessionmaker
     try:
+        refuse_token_terminal(access, audit_action)
         task = await reader.task(task_id)
         async with maker() as db:
             await _require_task_role(db, reader, access, role, task)
@@ -271,7 +274,7 @@ async def exec_task(websocket: WebSocket, task_id: str, cmd: str = "/bin/sh") ->
         "/containers/{container}/exec",
         {"cmd": cmd},
         Role.OPERATOR,
-        audit_action="terminal.session",
+        audit_action=TERMINAL_ACTION,
     )
 
 

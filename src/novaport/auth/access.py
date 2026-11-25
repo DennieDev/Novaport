@@ -32,12 +32,18 @@ def _highest(roles: Iterable[Role | None]) -> Role | None:
     return max(present, key=lambda r: r.rank) if present else None
 
 
+def _capped(role: Role, cap: Role) -> Role:
+    return role if cap.includes(role) else cap
+
+
 @dataclass(frozen=True)
 class Access:
     user: User
     global_role: Role | None
     stack_roles: Mapping[uuid.UUID, Role] = field(default_factory=dict)
     ip: str | None = None
+    # Name of the API token the request came with, if it didn't come with a session.
+    token: str | None = None
 
     def role_for(self, stack_id: uuid.UUID | None = None) -> Role | None:
         stack_role = self.stack_roles.get(stack_id) if stack_id else None
@@ -83,8 +89,13 @@ class Access:
             outcome=outcome,
             target=target,
             stack_id=stack_id,
-            details=details,
+            details=self.with_token(details),
         )
+
+    def with_token(self, details: dict[str, Any] | None) -> dict[str, Any] | None:
+        if self.token is None:
+            return details
+        return {**(details or {}), "token": self.token}
 
 
 def record(
@@ -119,7 +130,15 @@ def _group_ids(user_id: uuid.UUID) -> Any:
     return select(GroupMember.group_id).where(GroupMember.user_id == user_id)
 
 
-async def load_access(db: AsyncSession, user: User, ip: str | None = None) -> Access:
+async def load_access(
+    db: AsyncSession,
+    user: User,
+    ip: str | None = None,
+    *,
+    cap: Role | None = None,
+    token: str | None = None,
+) -> Access:
+    """The user's roles. With `cap`, no role is higher than it (API tokens)."""
     bindings = await db.scalars(
         select(RoleBinding).where(
             or_(RoleBinding.user_id == user.id, RoleBinding.group_id.in_(_group_ids(user.id)))
@@ -135,7 +154,10 @@ async def load_access(db: AsyncSession, user: User, ip: str | None = None) -> Ac
             current = stack_roles.get(binding.stack_id)
             if current is None or role.rank > current.rank:
                 stack_roles[binding.stack_id] = role
-    return Access(user=user, global_role=global_role, stack_roles=stack_roles, ip=ip)
+    if cap is not None:
+        global_role = _capped(global_role, cap) if global_role else None
+        stack_roles = {stack: _capped(role, cap) for stack, role in stack_roles.items()}
+    return Access(user=user, global_role=global_role, stack_roles=stack_roles, ip=ip, token=token)
 
 
 async def admin_count(db: AsyncSession) -> int:

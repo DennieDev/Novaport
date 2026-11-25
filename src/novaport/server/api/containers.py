@@ -28,7 +28,14 @@ from novaport.locks import try_lock
 from novaport.models import Outcome, Role, Stack, StackType
 from novaport.process import CommandTimeout
 from novaport.server.api.agents import bridge
-from novaport.server.deps import DB, CurrentAccess, current_user, websocket_access
+from novaport.server.deps import (
+    DB,
+    TERMINAL_ACTION,
+    CurrentAccess,
+    current_user,
+    refuse_token_terminal,
+    websocket_access,
+)
 from novaport.stacks.adopt import COMPOSE_PROJECT, COMPOSE_SERVICE
 
 log = logging.getLogger(__name__)
@@ -635,6 +642,7 @@ async def _proxy(
         return
     maker = websocket.app.state.sessionmaker
     try:
+        refuse_token_terminal(access, audit_action)
         async with maker() as db:
             stack = await _stack(db, access, stack_id, role, audit_action or "stack.view")
         located = await _locate(websocket.app, stack, ref)
@@ -712,5 +720,5 @@ async def exec_container(
         "/containers/{container}/exec",
         {"cmd": cmd},
         Role.OPERATOR,
-        audit_action="terminal.session",
+        audit_action=TERMINAL_ACTION,
     )

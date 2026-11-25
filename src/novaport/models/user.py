@@ -6,6 +6,7 @@ from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from novaport.db import Base
+from novaport.models.access import Role
 
 
 class User(Base):
@@ -25,6 +26,9 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     sessions: Mapped[list["Session"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    api_tokens: Mapped[list["ApiToken"]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
 
@@ -48,3 +52,26 @@ class Session(Base):
     user_agent: Mapped[str | None] = mapped_column(String(512))
 
     user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class ApiToken(Base):
+    """A bearer token for scripts. It acts as its user, limited to `role`."""
+
+    __tablename__ = "api_tokens"
+    __table_args__ = (UniqueConstraint("user_id", "name"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    # Enough of the token to recognize it in a list.
+    prefix: Mapped[str] = mapped_column(String(16))
+    role: Mapped[Role] = mapped_column(String(10))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_ip: Mapped[str | None] = mapped_column(String(45))
+
+    user: Mapped[User] = relationship(back_populates="api_tokens")

@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
 	import { api, errorMessage } from '#lib/api.ts';
+	import ApiTokens from '#lib/components/ApiTokens.svelte';
 	import { session } from '#lib/session.svelte.ts';
 
 	let current = $state('');
@@ -78,6 +79,13 @@
 	{:else}
 		<p class="muted">Your password is managed by your login provider.</p>
 	{/if}
+
+	<h2>API tokens</h2>
+	<p class="muted">
+		For scripts and other tools. A token acts as you, with no role higher than the one you pick.
+		Tokens can't open terminals, create other tokens, or change your password.
+	</p>
+	<ApiTokens />
 {/if}
 
 <style>

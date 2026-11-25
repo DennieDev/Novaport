@@ -33,9 +33,10 @@ from novaport.models.stack import (
     Stack,
     StackType,
 )
-from novaport.models.user import Session, User
+from novaport.models.user import ApiToken, Session, User
 
 __all__ = [
+    "ApiToken",
     "AuditEntry",
     "Base",
     "ChannelKind",

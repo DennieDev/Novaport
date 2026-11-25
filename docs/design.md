@@ -340,6 +340,10 @@ cached for 15 minutes.
   first login with no roles.
 - A local admin account exists for bootstrap and break-glass. It can be disabled.
 - Sessions are server-side, referenced by an HTTP-only, `SameSite=Lax` cookie.
+- API tokens for scripts: bearer tokens that act as their user, capped at a role picked when they
+  are created, with an optional expiry. Only a hash is stored. A request with a bearer token
+  never falls back to the session cookie. Tokens can't open terminals, create tokens, or change
+  passwords.
 
 ### Roles
 
