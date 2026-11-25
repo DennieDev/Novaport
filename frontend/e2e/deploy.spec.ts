@@ -46,10 +46,14 @@ test('deploys a stack and follows it to the end', async () => {
 	await expect(page.getByRole('heading', { name: stack })).toBeVisible();
 	await page.getByRole('button', { name: /^Deploy/ }).click();
 
-	await expect(page).toHaveURL(/\/deployments\//);
-	await expect(page.getByRole('heading', { name: `Deploy ${stack}` })).toContainText('succeeded', {
-		timeout: 150_000
-	});
+	// The stack page stays open and shows the deployment above the services.
+	const progress = page.locator('.progress');
+	await expect(progress).toContainText('succeeded', { timeout: 150_000 });
+	await expect(progress).toContainText('Deployed.');
+	await expect(page).toHaveURL(/\/stacks\//);
+
+	await progress.getByRole('link', { name: 'Full log' }).click();
+	await expect(page.getByRole('heading', { name: `Deploy ${stack}` })).toContainText('succeeded');
 	await expect(page.getByText('All services are running.')).toBeVisible();
 });
 
