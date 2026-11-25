@@ -13,10 +13,10 @@
 
 	const roles: Role[] = ['viewer', 'operator', 'editor', 'admin'];
 	const expiries: [string, number | null][] = [
-		['expires in 30 days', 30],
-		['expires in 90 days', 90],
-		['expires in 1 year', 365],
-		['never expires', null]
+		['in 30 days', 30],
+		['in 90 days', 90],
+		['in 1 year', 365],
+		['never', null]
 	];
 
 	let name = $state('');
@@ -77,6 +77,7 @@
 			<thead>
 				<tr>
 					<th>Name</th>
+					<th>Token</th>
 					{#if all}<th>User</th>{/if}
 					<th>Role</th>
 					<th>Expires</th>
@@ -87,7 +88,8 @@
 			<tbody>
 				{#each tokens.data as t (t.id)}
 					<tr>
-						<td><strong>{t.name}</strong> <code class="muted">{t.prefix}…</code></td>
+						<td><strong>{t.name}</strong></td>
+						<td class="muted"><code>{t.prefix}…</code></td>
 						{#if all}<td>{t.username}</td>{/if}
 						<td>{t.role}</td>
 						<td class:error={expired(t)} title={t.expires_at ?? undefined}>
@@ -102,22 +104,33 @@
 			</tbody>
 		</table>
 	{:else}
-		<p class="muted">No API tokens.</p>
+		<p class="muted empty">No API tokens.</p>
 	{/if}
 {/if}
 
 {#if !all}
-	<form class="row" onsubmit={create}>
-		<input bind:value={name} required maxlength="100" placeholder="name, e.g. ci-deploy" />
-		<select bind:value={role} aria-label="Role">
-			{#each roles as r (r)}<option value={r}>{r}</option>{/each}
-		</select>
-		<select bind:value={expiresInDays} aria-label="Expires">
-			{#each expiries as [label, days] (label)}
-				<option value={days}>{label}</option>
-			{/each}
-		</select>
-		<button type="submit">Create token</button>
+	<form class="panel form" onsubmit={create}>
+		<label>
+			Name
+			<input bind:value={name} required maxlength="100" placeholder="e.g. ci-deploy" />
+		</label>
+		<label>
+			Highest role
+			<select bind:value={role}>
+				{#each roles as r (r)}<option value={r}>{r}</option>{/each}
+			</select>
+		</label>
+		<label>
+			Expires
+			<select bind:value={expiresInDays}>
+				{#each expiries as [label, days] (label)}
+					<option value={days}>{label}</option>
+				{/each}
+			</select>
+		</label>
+		<div>
+			<button class="primary" type="submit">Create token</button>
+		</div>
 	</form>
 {/if}
 
@@ -132,7 +145,18 @@
 		padding: 0.6rem;
 		border-radius: 4px;
 	}
-	form {
-		margin-top: 0.75rem;
+	.form {
+		display: grid;
+		gap: 0.85rem;
+		max-width: 26rem;
+	}
+	label {
+		display: grid;
+		gap: 0.3rem;
+		font-weight: 500;
+	}
+	.form,
+	.empty {
+		margin-top: 1rem;
 	}
 </style>
