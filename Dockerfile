@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-alpine AS frontend
+# Static files, the same for every platform, so built once on the build machine.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
 WORKDIR /src
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -23,8 +24,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM docker:29-cli AS docker-cli
 
-FROM debian:trixie-slim AS sops
-ARG TARGETARCH=amd64
+FROM --platform=$BUILDPLATFORM debian:trixie-slim AS sops
+ARG TARGETARCH
 ARG SOPS_VERSION=v3.13.3
 ARG SOPS_SHA256_amd64=e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b
 ARG SOPS_SHA256_arm64=53b0abacd38ef1b12a66d6c100956691b9cefce018d91f81e73ddf7438b94d77
