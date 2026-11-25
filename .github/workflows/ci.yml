@@ -71,7 +71,6 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    needs: [backend, frontend]
     services:
       postgres:
         image: postgres:18-alpine
@@ -114,7 +113,7 @@ jobs:
       - name: Start a test Swarm
         run: NOVAPORT_SWARM_AGENT_IMAGE=novaport:dev tests/integration/swarm.sh up >> "$GITHUB_ENV"
       - run: uv sync --locked
-      - run: uv run pytest tests/integration
+      - run: uv run pytest tests/integration --durations=10
       - uses: actions/setup-node@v7
         with:
           node-version: 24
