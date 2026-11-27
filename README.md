@@ -8,9 +8,8 @@ git: it is marked failed, and rolling back is a deploy of an older revision you 
 
 > Early development. Nothing here is ready for use yet.
 
-- [Writing stacks](docs/stacks.md): repository layout, `swarmer.yaml`, secrets, image updates.
-- [Running Swarmer](docs/operations.md): installing, configuration, webhooks, backups, upgrades.
-- [Design](docs/design.md).
+Documentation, including the API reference, is at [swarmer.dennie.io](https://swarmer.dennie.io).
+The design notes are in [docs/design.md](docs/design.md).
 
 ## Running on Docker Swarm
 
@@ -187,6 +186,21 @@ are skipped.
 Frontend tests: `npm test` in `frontend` runs the unit and component tests. With the test Swarm
 and Postgres from above, `frontend/e2e/run.sh` builds the frontend, starts a server, and runs
 the Playwright suite against it.
+
+### Site
+
+The site at swarmer.dennie.io lives in `site` (Astro Starlight). The API reference is built from
+the server's OpenAPI document, so export that first:
+
+```sh
+cd site
+npm install
+npm run openapi
+npm run dev
+```
+
+The release workflow publishes the site to GitHub Pages after each release. Run the Site
+workflow by hand to publish a docs fix in between.
 
 ### Releasing
 

@@ -1,0 +1,72 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* JetBrains Mono, as in the app. SIL Open Font License, see fonts/OFL.txt. */
+@font-face {
+	font-family: 'JetBrains Mono';
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+	src: url('../fonts/JetBrainsMono-Regular.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'JetBrains Mono';
+	font-weight: 600;
+	font-style: normal;
+	font-display: swap;
+	src: url('../fonts/JetBrainsMono-SemiBold.woff2') format('woff2');
+}
+
+/* The app's palette. Starlight keeps dark values on :root and light values under data-theme. */
+:root {
+	--sl-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+	--sl-color-accent-low: #16223a;
+	--sl-color-accent: #5b8ff0;
+	--sl-color-accent-high: #8ab4ff;
+	--sl-color-white: #e8ecf2;
+	--sl-color-gray-1: #d3d9e2;
+	--sl-color-gray-2: #a3acba;
+	--sl-color-gray-3: #7d8696;
+	--sl-color-gray-4: #4b5363;
+	--sl-color-gray-5: #2e3542;
+	--sl-color-gray-6: #141822;
+	--sl-color-black: #0c0e12;
+}
+:root[data-theme='light'] {
+	--sl-color-accent-low: #e8f0fe;
+	--sl-color-accent: #2563eb;
+	--sl-color-accent-high: #1d4ed8;
+	--sl-color-white: #1b1d23;
+	--sl-color-gray-1: #2b2f38;
+	--sl-color-gray-2: #474d5a;
+	--sl-color-gray-3: #687082;
+	--sl-color-gray-4: #9aa1af;
+	--sl-color-gray-5: #cfd3db;
+	--sl-color-gray-6: #eef0f3;
+	--sl-color-gray-7: #f6f7f9;
+	--sl-color-black: #ffffff;
+}
+
+.site-title {
+	font-family: var(--sl-font-mono);
+	font-weight: 600;
+	letter-spacing: -0.02em;
+	text-transform: lowercase;
+}
+.site-title::after {
+	content: '_';
+	color: var(--sl-color-accent-high);
+}
+@keyframes blink {
+	50% {
+		opacity: 0;
+	}
+}
+@media (prefers-reduced-motion: no-preference) {
+	.site-title::after {
+		animation: blink 1.2s steps(1) infinite;
+	}
+}
+
+.hero .tagline {
+	max-width: 36rem;
+}

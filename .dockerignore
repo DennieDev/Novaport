@@ -10,3 +10,4 @@
 .env.*
 frontend/build
 frontend/.svelte-kit
+site

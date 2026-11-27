@@ -1,0 +1,75 @@
+---
+title: Docker Swarm and Compose stacks from git
+description: Git-driven management UI for Docker and Docker Swarm stacks.
+template: splash
+hero:
+  title: Swarmer
+  tagline: Deploy Docker Swarm and Compose stacks from git, see exactly what is running and why something isn't, and have changes made in the UI land back in git as commits.
+  image:
+    dark: ../../assets/logo-dark.svg
+    light: ../../assets/logo-light.svg
+  actions:
+    - text: Install
+      link: /install/
+      icon: right-arrow
+    - text: How it works
+      link: /introduction/
+      variant: minimal
+    - text: GitHub
+      link: https://github.com/DennieDev/swarmer
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+:::caution[Early development]
+Swarmer is pre-1.0 and every release so far is a release candidate. Expect breaking changes
+between releases, and read the release notes before upgrading.
+:::
+
+## What it does
+
+<CardGrid>
+	<Card title="Git is the source of truth" icon="seti:git">
+		Every stack is a folder in a git repository. A push creates a revision; edits in the UI are
+		commits, straight to the branch or as a pull request. Nothing lives only in Swarmer.
+	</Card>
+	<Card title="Deploys that don't lie" icon="rocket">
+		A failed deploy is marked failed, with every error and task state shown. It never reverts
+		what's in git. Rolling back is a deploy of an older revision that you ask for.
+	</Card>
+	<Card title="Checks before anything changes" icon="approve-check">
+		Before each deploy Swarmer validates the compose file, checks that images exist, that bind
+		mounts are present on every eligible node, that external networks and secrets exist, and that
+		ports are free.
+	</Card>
+	<Card title="Secrets in git, encrypted" icon="seti:lock">
+		Each stack can keep a SOPS and age encrypted `secrets.env`. Values become Swarm secrets named
+		after a hash of their content, so rotating one is an ordinary rolling update.
+	</Card>
+	<Card title="Image updates through git" icon="seti:docker">
+		An `x-updates` block on a service has Swarmer look for newer tags or digests and commit them,
+		open a pull request, or just tell you.
+	</Card>
+	<Card title="Logs and terminals on every node" icon="seti:shell">
+		An agent on each node gives container logs, terminals, volume browsing, and disk and image
+		usage, for the whole cluster, from one place.
+	</Card>
+</CardGrid>
+
+## Also included
+
+- Docker Swarm stacks and plain Compose projects, on the Swarm Swarmer runs on and on remote
+  hosts or clusters through an outbound agent connection.
+- Deploy modes per stack: deploy on every change, wait for approval, or only when asked.
+- OpenID Connect login, group-based roles per stack, API tokens, and an audit log.
+- Drift detection when someone changes a service by hand.
+- Notifications to webhooks, Slack, and email.
+
+## Running it
+
+Swarmer is one image, `ghcr.io/denniedev/swarmer`, that runs as the server on a Swarm manager and
+as an agent on every node, next to Postgres. See [Installing](/install/).
+
+Swarmer is free software under the [AGPL-3.0](https://github.com/DennieDev/swarmer/blob/main/LICENSE).

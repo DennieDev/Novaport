@@ -1,0 +1,26 @@
+{
+	"name": "swarmer-site",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"openapi": "cd .. && uv run python site/openapi.py",
+		"dev": "astro dev",
+		"build": "astro build",
+		"preview": "astro preview",
+		"check": "astro check"
+	},
+	"dependencies": {
+		"@astrojs/starlight": "^0.43.2",
+		"astro": "^7.4.13",
+		"sharp": "^0.35.5",
+		"starlight-openapi": "^0.27.1"
+	},
+	"devDependencies": {
+		"@astrojs/check": "^0.9.12",
+		"typescript": "^6.0.3"
+	},
+	"overrides": {
+		"form-data": "^4.0.6"
+	}
+}

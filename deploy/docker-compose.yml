@@ -26,7 +26,8 @@ services:
         constraints: [node.role == manager]
       update_config:
         # The old server keeps running until the new one is healthy, so a deploy of this
-        # stack started from Swarmer itself completes. See docs/operations.md.
+        # stack started from Swarmer itself completes. See
+        # https://swarmer.dennie.io/operations/self-managed/
         order: start-first
       labels:
         - traefik.enable=true

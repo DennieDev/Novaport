@@ -97,3 +97,11 @@ jobs:
           case "$GITHUB_REF_NAME" in *-*) prerelease=true ;; esac
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" \
             --generate-notes --verify-tag --prerelease="$prerelease"
+
+  site:
+    needs: publish
+    uses: ./.github/workflows/site.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
