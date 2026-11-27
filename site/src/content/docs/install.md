@@ -22,10 +22,14 @@ directory, and copy `.env.example` to `.env`. Keep `.env` readable by root only 
 Fill in the values. The comments in the file say how to generate each one:
 
 ```sh
-openssl rand -hex 32                                       # SWARMER_AGENT_TOKEN
-docker run --rm ghcr.io/denniedev/swarmer generate-key     # SWARMER_SECRET_KEY
-docker run --rm ghcr.io/denniedev/swarmer generate-age-key # SWARMER_AGE_KEY
-openssl rand -hex 24                                       # POSTGRES_PASSWORD
+# SWARMER_AGENT_TOKEN
+openssl rand -hex 32
+# SWARMER_SECRET_KEY
+docker run --rm ghcr.io/denniedev/swarmer generate-key
+# SWARMER_AGE_KEY
+docker run --rm ghcr.io/denniedev/swarmer generate-age-key
+# POSTGRES_PASSWORD, also the password in SWARMER_DATABASE_URL
+openssl rand -hex 24
 ```
 
 `generate-age-key` prints the private key (the `AGE-SECRET-KEY-...` line) and its public key. The
@@ -46,7 +50,8 @@ Create the data directories and deploy from the directory with the files:
 
 ```sh
 mkdir -p /data/swarmer/data /data/swarmer/postgres
-SWARMER_IMAGE=ghcr.io/denniedev/swarmer:0.1.0 docker stack deploy -c docker-compose.yml swarmer
+export SWARMER_IMAGE=ghcr.io/denniedev/swarmer:0.1.0
+docker stack deploy -c docker-compose.yml swarmer
 ```
 
 Pin a version rather than `latest`, so a redeploy never upgrades by accident.

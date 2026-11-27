@@ -7,7 +7,8 @@ Scripts use the same API as the UI, authenticated with a token instead of a logi
 under Account, API tokens, and send it as a bearer token:
 
 ```sh
-curl -H "Authorization: Bearer sw_..." https://swarmer.example.com/api/stacks
+curl -H "Authorization: Bearer sw_..." \
+  https://swarmer.example.com/api/stacks
 ```
 
 A token acts as the user who created it, with no role higher than the one picked for it. Every

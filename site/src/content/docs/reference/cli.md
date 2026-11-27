@@ -24,5 +24,6 @@ docker run --rm ghcr.io/denniedev/swarmer generate-key
 To reset a password on a running install:
 
 ```sh
-docker exec -it "$(docker ps -q -f name=swarmer_server)" swarmer set-password admin
+docker exec -it "$(docker ps -q -f name=swarmer_server)" \
+  swarmer set-password admin
 ```

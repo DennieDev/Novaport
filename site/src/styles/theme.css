@@ -47,12 +47,15 @@
 }
 
 .site-title {
+	gap: 0.55em;
+	color: var(--sl-color-white);
 	font-family: var(--sl-font-mono);
 	font-weight: 600;
 	letter-spacing: -0.02em;
 	text-transform: lowercase;
 }
-.site-title::after {
+/* On the text itself: on the link it would be a flex item, a whole gap away from the name. */
+.site-title span::after {
 	content: '_';
 	color: var(--sl-color-accent-high);
 }
@@ -62,11 +65,26 @@
 	}
 }
 @media (prefers-reduced-motion: no-preference) {
-	.site-title::after {
+	.site-title span::after {
 		animation: blink 1.2s steps(1) infinite;
 	}
 }
 
 .hero .tagline {
 	max-width: 36rem;
+}
+.hero > img {
+	width: min(40%, 8rem);
+}
+@media (min-width: 50rem) {
+	.hero > img {
+		width: min(100%, 14rem);
+	}
+}
+
+/* One colour for every card icon instead of Starlight's rotating palette. */
+.card .icon {
+	color: var(--sl-color-accent-high);
+	border-color: var(--sl-color-gray-5);
+	background-color: var(--sl-color-accent-low);
 }

@@ -53,8 +53,8 @@ Email channels only hold recipients. The SMTP server is set on the server:
 ```sh
 SWARMER_SMTP_HOST=smtp.example.com
 SWARMER_SMTP_PORT=587
-SWARMER_SMTP_SECURITY=starttls   # starttls, tls (usually port 465), or none
+SWARMER_SMTP_SECURITY=starttls   # or tls (port 465), or none
 SWARMER_SMTP_USERNAME=swarmer
-SWARMER_SMTP_PASSWORD=...        # or the swarmer_smtp_password Swarm secret
+SWARMER_SMTP_PASSWORD=...        # or a swarmer_smtp_password secret
 SWARMER_SMTP_FROM=swarmer@example.com
 ```

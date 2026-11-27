@@ -7,7 +7,7 @@ Swarmer deploys what is in git. One repository holds any number of stacks, one f
 under a stacks folder (`stacks` by default, set per repository):
 
 ```
-.sops.yaml                 # age public keys for encrypting secrets.env files
+.sops.yaml                 # age public keys for secrets.env files
 stacks/
   traefik/
     compose.yaml

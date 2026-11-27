@@ -2,6 +2,7 @@
 title: Docker Swarm and Compose stacks from git
 description: Git-driven management UI for Docker and Docker Swarm stacks.
 template: splash
+editUrl: false
 hero:
   title: Swarmer
   tagline: Deploy Docker Swarm and Compose stacks from git, see exactly what is running and why something isn't, and have changes made in the UI land back in git as commits.
@@ -60,8 +61,8 @@ between releases, and read the release notes before upgrading.
 
 ## Also included
 
-- Docker Swarm stacks and plain Compose projects, on the Swarm Swarmer runs on and on remote
-  hosts or clusters through an outbound agent connection.
+- Swarm stacks and plain Compose projects, on Swarmer's own cluster or on other Docker hosts.
+  Remote hosts connect through an agent that dials out, so they need no open ports.
 - Deploy modes per stack: deploy on every change, wait for approval, or only when asked.
 - OpenID Connect login, group-based roles per stack, API tokens, and an audit log.
 - Drift detection when someone changes a service by hand.

@@ -9,7 +9,8 @@ Read the [release notes](https://github.com/DennieDev/swarmer/releases), back up
 and deploy the new version:
 
 ```sh
-SWARMER_IMAGE=ghcr.io/denniedev/swarmer:0.2.0 docker stack deploy -c docker-compose.yml swarmer
+export SWARMER_IMAGE=ghcr.io/denniedev/swarmer:0.2.0
+docker stack deploy -c docker-compose.yml swarmer
 ```
 
 This updates the server and every agent together; keep them on the same version. The server

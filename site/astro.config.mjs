@@ -21,6 +21,9 @@ export default defineConfig({
 				baseUrl: 'https://github.com/DennieDev/swarmer/edit/main/site/',
 			},
 			customCss: ['./src/styles/theme.css'],
+			expressiveCode: {
+				defaultProps: { wrap: true },
+			},
 			plugins: [
 				starlightOpenAPI([
 					{

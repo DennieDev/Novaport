@@ -37,7 +37,8 @@ Stop the server, restore, and start it again:
 ```sh
 docker service scale swarmer_server=0
 docker exec -i "$(docker ps -q -f name=swarmer_postgres)" \
-  pg_restore -U swarmer -d swarmer --clean --if-exists < swarmer-2026-11-24.dump
+  pg_restore -U swarmer -d swarmer --clean --if-exists \
+  < swarmer-2026-11-24.dump
 docker service scale swarmer_server=1
 ```
 
